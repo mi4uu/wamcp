@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wamcp · WhatsApp</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><circle cx='16' cy='16' r='15' fill='%2325d366'/><path d='M10 22l1.2-3.6A7 7 0 1 1 13.8 21z' fill='white'/></svg>">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<div id="boot" class="screen center"><div class="spinner"></div></div>
+
+<div id="pair" class="screen center" hidden>
+  <div class="card pair-card">
+    <h1>Link wamcp to WhatsApp</h1>
+    <ol>
+      <li>Open WhatsApp on your phone</li>
+      <li>Tap <b>Settings</b> (or ⋮) → <b>Linked devices</b> → <b>Link a device</b></li>
+      <li>Point your phone at this code</li>
+    </ol>
+    <div class="qr-box">
+      <img id="qr" alt="QR code" hidden>
+      <div id="qr-wait" class="muted">Generating code…</div>
+      <button id="qr-retry" class="btn" hidden>Get a new code</button>
+    </div>
+    <details id="pair-phone-box">
+      <summary>Link with phone number instead</summary>
+      <form id="pair-phone-form" class="row">
+        <input id="pair-phone" type="tel" placeholder="+48 600 000 000" autocomplete="tel">
+        <button class="btn primary">Get code</button>
+      </form>
+      <div id="pair-code" class="pair-code" hidden></div>
+      <p class="muted small">On the phone: Linked devices → Link a device → <i>Link with phone number instead</i>, then type the code.</p>
+    </details>
+    <p id="pair-status" class="muted small"></p>
+    <p class="muted small">After linking, the whole history is copied from your phone. Keep WhatsApp open on the phone for a few minutes.</p>
+  </div>
+</div>
+
+<div id="login" class="screen center" hidden>
+  <form id="login-form" class="card login-card">
+    <h1>Sign in</h1>
+    <p class="muted">Run <code>wamcp open</code> in a terminal, or paste the access token printed by <code>wamcp token</code>.</p>
+    <input id="login-token" type="password" placeholder="Access token" autocomplete="current-password">
+    <button class="btn primary">Sign in</button>
+    <p id="login-error" class="error small"></p>
+  </form>
+</div>
+
+<div id="app" hidden>
+  <aside id="sidebar">
+    <header class="side-head">
+      <div id="me-avatar" class="avatar sm"></div>
+      <div id="conn" class="conn" title="Connection"></div>
+      <div class="grow"></div>
+      <button class="icon" id="btn-new" title="New chat">✎</button>
+      <button class="icon" id="btn-starred" title="Starred messages">★</button>
+      <button class="icon" id="btn-calls" title="Calls">☎</button>
+      <button class="icon" id="btn-settings" title="Settings">⚙</button>
+    </header>
+    <div id="banner" class="banner" hidden></div>
+    <div class="search-wrap">
+      <input id="search" type="search" placeholder="Search chats and messages" autocomplete="off">
+    </div>
+    <div id="filters" class="chips"></div>
+    <div id="side-body" class="side-body"></div>
+  </aside>
+
+  <main id="main">
+    <div id="empty" class="empty">
+      <div class="empty-inner">
+        <h2>wamcp</h2>
+        <p class="muted">Your WhatsApp, archived locally and available to AI assistants over MCP.</p>
+        <p id="empty-stats" class="muted small"></p>
+      </div>
+    </div>
+    <section id="chat" hidden>
+      <header class="chat-head">
+        <button class="icon back" id="btn-back" title="Back">←</button>
+        <div id="chat-avatar" class="avatar"></div>
+        <div class="chat-title" id="chat-title-box">
+          <div id="chat-name" class="name"></div>
+          <div id="chat-sub" class="sub muted"></div>
+        </div>
+        <div class="grow"></div>
+        <button class="icon" id="btn-chat-search" title="Search in chat">🔍</button>
+        <button class="icon" id="btn-info" title="Chat info">ⓘ</button>
+        <button class="icon" id="btn-menu" title="Menu">⋮</button>
+      </header>
+      <div id="messages" class="messages"></div>
+      <button id="to-bottom" class="to-bottom" hidden title="Jump to latest">↓</button>
+      <div id="attach-bar" class="attach-bar" hidden></div>
+      <div id="reply-bar" class="reply-bar" hidden></div>
+      <footer class="composer" id="composer">
+        <button class="icon" id="btn-attach" title="Attach">📎</button>
+        <input id="file" type="file" multiple hidden>
+        <textarea id="input" rows="1" placeholder="Type a message"></textarea>
+        <button class="icon send" id="btn-send" title="Send">➤</button>
+      </footer>
+      <div id="readonly-bar" class="readonly-bar" hidden></div>
+    </section>
+  </main>
+
+  <aside id="info" hidden></aside>
+</div>
+
+<div id="menu" class="menu" hidden></div>
+<div id="modal" class="modal" hidden><div class="modal-card" id="modal-card"></div></div>
+<div id="lightbox" class="lightbox" hidden></div>
+<div id="toast" class="toast" hidden></div>
+<script type="module" src="/static/app.js"></script>
+</body>
+</html>
