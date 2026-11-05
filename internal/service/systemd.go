@@ -72,8 +72,7 @@ WantedBy=default.target
 }
 
 func systemctl(args ...string) (string, error) {
-	out, err := exec.Command("systemctl", append([]string{"--user"}, args...)...).CombinedOutput()
-	return strings.TrimSpace(string(out)), err
+	return run("systemctl", append([]string{"--user"}, args...)...)
 }
 
 func systemdAvailable() error {
