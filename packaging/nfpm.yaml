@@ -12,7 +12,7 @@ description: |-
   and gives AI assistants read-only access over MCP. Sending is opt-in.
 vendor: mi4uu
 homepage: https://github.com/mi4uu/wamcp
-license: AGPL-3.0-only
+license: AGPL-3.0-or-later
 contents:
   - src: "@BINARY@"
     dst: /usr/bin/@NAME@
