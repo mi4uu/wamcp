@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mi4uu/wamcp/internal/about"
 	"github.com/mi4uu/wamcp/internal/archive"
 	"github.com/mi4uu/wamcp/internal/demo"
 	"github.com/mi4uu/wamcp/internal/ingest"
@@ -217,6 +218,7 @@ func TestDemoServer(t *testing.T) {
 		t.Skip("set WAMCP_DEMO_ADDR to run the demo server")
 	}
 	srv, _ := setup(t)
+	srv.s.opt.About = about.New("dev", "demo data")
 	t.Logf("demo at http://%s/login?code=%s (token %s)", addr, srv.NewLoginCode(), testToken)
 	if err := http.ListenAndServe(addr, srv); err != nil {
 		t.Fatal(err)

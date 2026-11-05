@@ -82,6 +82,7 @@ Where others are ahead, today:
 - [Limitations](#limitations)
 - [CLI](#cli)
 - [Development](#development)
+- [Bugs, ideas and security reports](#bugs-ideas-and-security-reports)
 - [License](#license)
 
 ## Quick start
@@ -266,6 +267,7 @@ wamcp audit     Show messages MCP agents sent or tried to send
 wamcp oauth     list | revoke <client id>: OAuth clients you approved (serve --oauth)
 wamcp service   install | uninstall | restart | status (macOS and Linux)
 wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
+wamcp bug       Open a pre-filled GitHub bug report (version and OS only)
 wamcp version
 ```
 
@@ -288,6 +290,12 @@ make build
 | `internal/web` | HTTP API and the embedded web client |
 | `internal/service` | launchd and systemd integration |
 | `cmd/wamcp` | The CLI |
+
+## Bugs, ideas and security reports
+
+- **Bug:** `wamcp bug`, or Settings > About > Report a bug in the web client. Both open a GitHub issue form with the version, OS and setup filled in, and nothing from your archive. Issues are public, so leave out phone numbers and message text.
+- **Idea:** [suggest a feature](https://github.com/mi4uu/wamcp/issues/new?template=feature_request.yml).
+- **Security problem:** report it privately, see [SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -754,6 +754,10 @@ func (s *server) apiDeviceLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
+func (s *server) apiAbout(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, s.opt.About)
+}
+
 func (s *server) apiStatus(w http.ResponseWriter, r *http.Request) {
 	stats, err := s.opt.Archive.Stats(r.Context())
 	if err != nil {

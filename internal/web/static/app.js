@@ -167,7 +167,7 @@ function dayLabel(ts) {
   if (sameDay(d, y)) return 'Yesterday';
   return d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
-function fullTime(ts) { return ts ? new Date(ts * 1000).toLocaleString() : '—'; }
+function fullTime(ts) { return ts ? new Date(ts * 1000).toLocaleString() : 'unknown'; }
 function size(n) {
   if (!n) return '';
   if (n > 1 << 20) return `${(n / (1 << 20)).toFixed(1)} MB`;
@@ -632,6 +632,7 @@ $('btn-starred').onclick = () => { S.view = S.view === 'starred' ? 'chats' : 'st
 $('btn-calls').onclick = () => { S.view = S.view === 'calls' ? 'chats' : 'calls'; renderFilters(); renderList(); };
 $('btn-new').onclick = newChatDialog;
 $('btn-settings').onclick = settingsDialog;
+$('empty-about').onclick = (e) => { e.preventDefault(); settingsDialog(); setTimeout(() => $('about') && $('about').scrollIntoView(), 50); };
 
 // ---------- conversation
 
@@ -810,7 +811,7 @@ function mediaEl(m) {
     case 'video': case 'gif': case 'video_note': {
       if (!m.downloaded && m.file_size > 16 << 20) {
         return h('div', { class: 'media-missing', onclick: (e) => e.currentTarget.replaceWith(h('video', { class: 'media', controls: true, src: url, autoplay: true })) },
-          `▶ ${kindLabel[m.kind]} · ${size(m.file_size)}${m.duration ? ' · ' + clock(m.duration) : ''} — click to load`);
+          `▶ ${kindLabel[m.kind]} · ${size(m.file_size)}${m.duration ? ' · ' + clock(m.duration) : ''}, click to load`);
       }
       const v = h('video', { class: 'media', controls: true, preload: 'metadata', src: url, loop: m.kind === 'gif', muted: m.kind === 'gif' });
       v.onerror = () => failed(v, kindLabel[m.kind]);
@@ -1208,7 +1209,7 @@ async function loadInfo(tab) {
   const about = h('div', { class: 'info-sec' }, h('h3', {}, 'About'));
   if (data.group) {
     if (data.group.topic) about.append(h('div', { class: 'text', style: 'margin-bottom:8px' }, richText(data.group.topic)));
-    about.append(kv('Created', data.group.created ? fullTime(data.group.created) + (data.group.owner ? ' by ' + data.group.owner : '') : '—'));
+    about.append(kv('Created', data.group.created ? fullTime(data.group.created) + (data.group.owner ? ' by ' + data.group.owner : '') : 'unknown'));
     if (data.group.community) about.append(kv('Type', 'Community'));
     if (data.group.parent) about.append(kv('Community', data.group.parent_name));
     if (data.group.announce) about.append(kv('Messages', 'Only admins can send'));
@@ -1325,6 +1326,23 @@ function newChatDialog() {
   pickChat('New chat', (jid) => openChat(jid));
 }
 
+function extLink(href, label) {
+  return h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, label);
+}
+
+function aboutSection(a) {
+  return [
+    h('hr', { style: 'border:0;border-top:1px solid var(--line);margin:14px 0' }),
+    h('h3', { class: 'about-title' }, 'About'),
+    kv('Version', `${a.version} (${a.platform}, ${a.go})`),
+    kv('Running as', a.setup),
+    h('div', { class: 'about-links' },
+      extLink(a.repo, 'Source code'), extLink(a.docs, 'Documentation'), extLink(a.releases, 'Releases'),
+      extLink(a.bug_url, 'Report a bug'), extLink(a.feature_url, 'Suggest a feature'), extLink(a.security_url, 'Report a security problem')),
+    h('p', { class: 'muted small' }, 'Free software under the AGPL-3.0. Bug reports are public on GitHub. The link fills in only the version, platform and setup above; leave out phone numbers and message text.'),
+  ];
+}
+
 function settingsDialog() {
   const toggle = (key, label, hint, onchange) => {
     const cb = h('input', { type: 'checkbox' });
@@ -1337,13 +1355,15 @@ function settingsDialog() {
     const d = r.daemon, st = r.stats;
     status.textContent = '';
     status.append(
-      kv('Account', `${d.account ? '+' + d.account.split('@')[0] : '—'} ${d.push_name || ''}`),
+      kv('Account', `${d.account ? '+' + d.account.split('@')[0] : 'not linked'} ${d.push_name || ''}`),
       kv('Connection', d.state + (d.connected_at ? ` since ${fullTime(Date.parse(d.connected_at) / 1000)}` : '')),
       kv('Archive', `${st.Messages.toLocaleString()} messages, ${st.Chats} chats, ${(st.DBBytes / 1048576).toFixed(1)} MB`),
       kv('History sync', d.history && d.history.batches ? `${d.history.batches} batches, ${d.history.messages} messages, ${d.history.last_type} ${d.history.last_progress}%` : 'waiting for the phone'),
       d.catch_up && d.catch_up.offline_seconds ? kv('Last catch-up', `${Math.round(d.catch_up.offline_seconds / 60)} min offline → ${d.catch_up.received} messages recovered${d.catch_up.done ? '' : ' (in progress)'}`) : '',
       d.last_error ? kv('Last error', d.last_error) : '');
   }).catch(() => {});
+  const aboutBox = h('div', { id: 'about' });
+  api('/api/about').then((a) => aboutBox.append(...aboutSection(a))).catch(() => {});
   modal('Settings', [
     status,
     h('hr', { style: 'border:0;border-top:1px solid var(--line);margin:14px 0' }),
@@ -1352,6 +1372,7 @@ function settingsDialog() {
     }),
     toggle('autoRead', 'Send read receipts when opening chats', 'Like the official client: opening a chat marks it read (blue ticks).'),
     toggle('online', 'Appear online while this tab is visible', 'Your phone gets no notifications while you appear online, exactly like WhatsApp Web.', (on) => { presenceState = null; setPresence(on && document.visibilityState === 'visible'); }),
+    aboutBox,
   ], [
     h('button', { class: 'btn danger', onclick: () => {
       modal('Unlink this device?', [h('p', {}, 'wamcp stops syncing until you link it again. The archive stays on disk.')], [
