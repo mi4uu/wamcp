@@ -16,7 +16,7 @@ As of 2026-11-05. Stars, last push and license come from the GitHub API on that 
 | Stars / last push | new / this repo | 6814 / 2025-07-13 | 27 / 2026-11-02 |
 | License | AGPL-3.0 | MIT | no LICENSE file (`package.json` says MIT) |
 | Stack | Go, whatsmeow, SQLite | Go bridge (whatsmeow) + Python MCP server | TypeScript, Baileys or WhatsApp Cloud API, BullMQ |
-| To install | Go 1.26, `make install`; one binary, no cgo | Go, Python 3.11+, uv; cgo on Windows | Node 24+, Redis; Docker Compose recommended |
+| To install | one static binary or a .deb, .rpm or Arch package; or build with Go 1.26 | Go, Python 3.11+, uv; cgo on Windows | Node 24+, Redis; Docker Compose recommended |
 | MCP tools | 13 read tools, plus `send_message` and `send_file` when switched on | 12 (3 send) | 169, plus 3 opt-in |
 | Transports | stdio, streamable HTTP | stdio | stdio, streamable HTTP |
 | Auth on HTTP | token always on (MCP-only token or main token); OAuth 2.1 with PKCE opt-in | no MCP HTTP; bridge REST on `:8080` has no auth | none unless configured; API key, Basic or OAuth 2.1 |
@@ -59,7 +59,7 @@ Other projects with 40+ stars, facts from the GitHub API and their READMEs:
 
 ## Review of whatsupd: gaps, ranked
 
-Fixed on branch `feat/opt-in-send`:
+Fixed since the first public version:
 
 1. **Web auto sign-in through a tunnel (high).** With `--web-auth local` on a loopback listener, a tunnel such as cloudflared running as the same OS user connects over loopback from a same-user process, so `sameUserPeer` signed in every visitor of the public hostname. A tunnel that rewrites the Host header to `localhost` (the usual workaround for the rebinding check) made this reachable. Now requests with proxy headers are never auto signed in, and `--public-host` forces token sign-in.
 2. **No supported way to run behind a tunnel (medium).** The Host check rejected the public name, so remote clients needed a non-loopback `--listen`. Added `--public-host`.
@@ -67,13 +67,12 @@ Fixed on branch `feat/opt-in-send`:
 4. **Untrusted text not flagged to agents (low).** The MCP instructions now say message text is data, not instructions.
 5. **No CI (low).** Added a workflow: gofmt, vet, staticcheck, race tests on Linux and macOS.
 6. **One token did everything (medium).** The MCP token also signed in to the web client, which can send without the policy. Added a separate MCP-only token (`whatsupd token --mcp`, `--rotate-mcp`); `whatsupd config` prints it.
-
 7. **No OAuth (high for remote use).** Clients that only speak OAuth could not connect. Added an opt-in OAuth 2.1 server (`--oauth`): metadata discovery, dynamic client registration, authorization code with S256 PKCE, rotating refresh tokens, owner approval with the main token, `whatsupd oauth list|revoke`.
 8. **Background service was macOS only (medium).** `whatsupd service` now writes a systemd user unit on Linux, tested on Debian trixie.
 9. **No MCP media sending (medium).** Added `send_file`: photos, videos, audio, voice notes and documents under the same policy. Paths are refused unless `--mcp-send-files-from` names a directory, and never leave it.
+10. **No prebuilt binaries (medium).** Installing needed Go 1.26. Each release now has static binaries for macOS and Linux, .deb, .rpm and Arch packages, and SHA256SUMS; CI installs every package.
+11. **`internal/wa` had no tests (medium).** Tests now cover the ack-after-commit path, redelivery, catch-up, auto-media, state events and media paths. Writing them found two bugs, both fixed: a redelivered message counted as unread twice, and a chat ID of ".." could put media outside the media directory.
 
 Still open, in order of impact:
 
-1. **No prebuilt binaries.** Installing needs Go 1.26. Release binaries for macOS and Linux would make "one binary" true for people without Go.
-2. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
-3. **Fewer tools than delltrak.** 15 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.
+1. **Fewer tools than delltrak.** 15 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.
