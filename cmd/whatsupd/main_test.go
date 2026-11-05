@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/demo"
-	"github.com/mi4uu/wamcp/internal/outbox"
-	"github.com/mi4uu/wamcp/internal/web"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/demo"
+	"github.com/mi4uu/whatsupd/internal/outbox"
+	"github.com/mi4uu/whatsupd/internal/web"
 )
 
 func TestSendNeedsAllowlistOffLoopback(t *testing.T) {

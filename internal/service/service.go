@@ -1,4 +1,4 @@
-// Package service installs wamcp as a background service so the daemon starts
+// Package service installs whatsupd as a background service so the daemon starts
 // at login and restarts after crashes: a LaunchAgent on macOS, a systemd user
 // unit on Linux.
 package service
@@ -9,7 +9,7 @@ import (
 )
 
 func unsupported() error {
-	return fmt.Errorf("the background service is not supported on %s; run `wamcp serve` under your own supervisor", runtime.GOOS)
+	return fmt.Errorf("the background service is not supported on %s; run `whatsupd serve` under your own supervisor", runtime.GOOS)
 }
 
 // Install writes the service definition and (re)starts it. It returns the
@@ -23,6 +23,18 @@ func Install(args []string, logFile string) (string, error) {
 		return systemdInstall(args)
 	}
 	return "", unsupported()
+}
+
+// RemoveLegacy stops and removes the service installed under the old name,
+// if there is one, and returns the path of the removed definition.
+func RemoveLegacy() (string, error) {
+	switch runtime.GOOS {
+	case "darwin":
+		return launchdRemoveLegacy()
+	case "linux":
+		return systemdRemoveLegacy()
+	}
+	return "", nil
 }
 
 // Stop stops the service without removing its definition.

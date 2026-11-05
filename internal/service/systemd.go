@@ -8,15 +8,19 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/mi4uu/whatsupd/internal/config"
 )
 
 // UnitName is the systemd user unit. Packages ship the same name under
-// /usr/lib/systemd/user; the copy `wamcp service install` writes to the user's
+// /usr/lib/systemd/user; the copy `whatsupd service install` writes to the user's
 // config directory takes precedence over it.
-const UnitName = "wamcp.service"
+const UnitName = "whatsupd.service"
 
-// UnitPath returns $XDG_CONFIG_HOME/systemd/user/wamcp.service.
-func UnitPath() (string, error) {
+// UnitPath returns $XDG_CONFIG_HOME/systemd/user/whatsupd.service.
+func UnitPath() (string, error) { return unitPath(UnitName) }
+
+func unitPath(name string) (string, error) {
 	dir := os.Getenv("XDG_CONFIG_HOME")
 	if dir == "" {
 		home, err := os.UserHomeDir()
@@ -25,7 +29,7 @@ func UnitPath() (string, error) {
 		}
 		dir = filepath.Join(home, ".config")
 	}
-	return filepath.Join(dir, "systemd", "user", UnitName), nil
+	return filepath.Join(dir, "systemd", "user", name), nil
 }
 
 // systemdArg quotes one ExecStart word. systemd expands % specifiers and $
@@ -54,8 +58,8 @@ func Unit(args []string) (string, error) {
 		words[i] = w
 	}
 	return `[Unit]
-Description=wamcp, WhatsApp archive and MCP server
-Documentation=https://github.com/mi4uu/wamcp
+Description=whatsupd, WhatsApp archive and MCP server
+Documentation=https://github.com/mi4uu/whatsupd
 
 [Service]
 ExecStart=` + strings.Join(words, " ") + `
@@ -74,10 +78,10 @@ func systemctl(args ...string) (string, error) {
 
 func systemdAvailable() error {
 	if _, err := exec.LookPath("systemctl"); err != nil {
-		return errors.New("systemctl not found; run `wamcp serve` under your own supervisor")
+		return errors.New("systemctl not found; run `whatsupd serve` under your own supervisor")
 	}
 	if out, err := systemctl("show-environment"); err != nil {
-		return fmt.Errorf("no systemd user session (%s); this is common in containers and WSL without systemd; run `wamcp serve` under your own supervisor", out)
+		return fmt.Errorf("no systemd user session (%s); this is common in containers and WSL without systemd; run `whatsupd serve` under your own supervisor", out)
 	}
 	return nil
 }
@@ -105,6 +109,23 @@ func systemdInstall(args []string) (string, error) {
 			return "", fmt.Errorf("systemctl --user %s: %v: %s", strings.Join(step, " "), err, out)
 		}
 	}
+	return path, nil
+}
+
+func systemdRemoveLegacy() (string, error) {
+	legacy := config.LegacyName + ".service"
+	path, err := unitPath(legacy)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", nil
+	}
+	_, _ = systemctl("disable", "--now", legacy)
+	if err := os.Remove(path); err != nil {
+		return "", err
+	}
+	_, _ = systemctl("daemon-reload")
 	return path, nil
 }
 
@@ -160,5 +181,5 @@ func systemdNotes() string {
 	if err != nil || strings.TrimSpace(string(out)) != "no" {
 		return ""
 	}
-	return "systemd stops user services when you log out. To keep wamcp running, run: loginctl enable-linger"
+	return "systemd stops user services when you log out. To keep whatsupd running, run: loginctl enable-linger"
 }

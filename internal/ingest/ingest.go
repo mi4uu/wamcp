@@ -20,7 +20,7 @@ import (
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 
-	"github.com/mi4uu/wamcp/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/archive"
 )
 
 // ParseFunc converts a history sync message into a message event

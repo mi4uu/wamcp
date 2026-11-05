@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mi4uu/wamcp/internal/oauth"
+	"github.com/mi4uu/whatsupd/internal/oauth"
 )
 
 func oauthServer(t *testing.T) (http.Handler, *oauth.Server) {

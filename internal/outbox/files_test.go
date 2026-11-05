@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/demo"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/demo"
 )
 
 var jpeg = append([]byte{0xff, 0xd8, 0xff, 0xe0}, bytes.Repeat([]byte("x"), 100)...)

@@ -17,7 +17,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mi4uu/wamcp/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/archive"
 )
 
 var (

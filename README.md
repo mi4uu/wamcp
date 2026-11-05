@@ -1,6 +1,6 @@
 <div align="center">
 
-# wamcp
+# whatsupd
 
 **Your WhatsApp, archived on your own machine, readable by your AI agents.**
 
@@ -11,7 +11,7 @@
 
 </div>
 
-![wamcp web client with synthetic demo data](docs/img/web-client-chat.png)
+![whatsupd web client with synthetic demo data](docs/img/web-client-chat.png)
 
 <sub>The web client running on synthetic data (`make demo`). Names and numbers are made up.</sub>
 
@@ -30,19 +30,19 @@
 | **Nothing lost on restart** | Messages are acked to WhatsApp only after they are written to disk. Offline gaps are recovered and counted. |
 | **One static binary** | Pure Go, no cgo, no Docker, no database server. A background service in one command: LaunchAgent on macOS, systemd on Linux. |
 
-## Why wamcp
+## Why whatsupd
 
 I wanted my agents to know what is going on in my WhatsApp: who wrote, what they asked, what I promised. The options were bad. Cloud bridges push your private chats through someone else's server. Scrapers break every month. Exporting chats by hand is a joke.
 
-So wamcp runs on your machine as a linked device, keeps the whole archive locally, and lets an agent read it over MCP. The MCP side is **read-only by default**: it never sends anything to WhatsApp. If an agent should answer someone, it drafts the text and you send it. If you do want an agent to send, you switch it on explicitly and limit who it can write to ([Letting agents send](#letting-agents-send-opt-in)).
+So whatsupd runs on your machine as a linked device, keeps the whole archive locally, and lets an agent read it over MCP. The MCP side is **read-only by default**: it never sends anything to WhatsApp. If an agent should answer someone, it drafts the text and you send it. If you do want an agent to send, you switch it on explicitly and limit who it can write to ([Letting agents send](#letting-agents-send-opt-in)).
 
-## How wamcp compares
+## How whatsupd compares
 
 WhatsApp MCP servers on GitHub with 40+ stars, as of 2026-11-05. Stars, dates and licenses from the GitHub API; the rest from each project's code or README. Details, sources and our own open gaps: [docs/COMPARISON.md](docs/COMPARISON.md).
 
 | Project | Stars | Last push | Runs as | Your messages live | Sends by default | Auth on HTTP |
 |---|---|---|---|---|---|---|
-| **wamcp** (this repo) | new | active | one Go binary | your disk, full history | **no**, opt-in with allowlist, rate limit, audit | bearer token always on; OAuth 2.1 opt-in |
+| **whatsupd** (this repo) | new | active | one Go binary | your disk, full history | **no**, opt-in with allowlist, rate limit, audit | bearer token always on; OAuth 2.1 opt-in |
 | [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp) | 6814 | 2025-07-13 | Go bridge + Python | your disk | yes | no MCP HTTP; bridge API on all interfaces, no auth |
 | [finereli/whatsapp-mcp](https://github.com/finereli/whatsapp-mcp) | 404 | 2026-10-24 | Cloudflare Worker | Cloudflare, encrypted | cannot send | OAuth |
 | [verygoodplugins/whatsapp-mcp](https://github.com/verygoodplugins/whatsapp-mcp) | 283 | 2026-10-30 | Go bridge + Python | your disk | yes | none on MCP HTTP |
@@ -52,9 +52,9 @@ WhatsApp MCP servers on GitHub with 40+ stars, as of 2026-11-05. Stars, dates an
 | [BrOrlandi/whatsapp-mcp](https://github.com/BrOrlandi/whatsapp-mcp) | 64 | 2026-10-09 | Docker Compose | your server | yes | setup token |
 | [pnizer/wweb-mcp](https://github.com/pnizer/wweb-mcp) | 46 | 2025-07-18 | Node + headless Chrome | your disk | yes | optional API key |
 | [FelixIsaac/whatsapp-mcp-extended](https://github.com/FelixIsaac/whatsapp-mcp-extended) | 44 | 2026-11-02 | Go bridge + Python | your disk | yes, optional allowlist | stdio only |
-| [delltrak/wamcp](https://github.com/delltrak/wamcp) (different project, same name) | 27 | 2026-11-02 | Node + Redis, Docker | your server, 30 days by default | yes | none unless configured; key, Basic or OAuth 2.1 |
+| [delltrak/wamcp](https://github.com/delltrak/wamcp) (different project; this one was called wamcp before) | 27 | 2026-11-02 | Node + Redis, Docker | your server, 30 days by default | yes | none unless configured; key, Basic or OAuth 2.1 |
 
-Where wamcp is ahead:
+Where whatsupd is ahead:
 
 - **Safe by default.** It is the only one in the table that is read-only out of the box and can still send when you ask for it, behind an allowlist, an hourly limit, retry de-duplication and an audit log.
 - **The whole archive, on your disk.** Every message, edit, deletion, group, contact and call, kept for good, with accent-insensitive full-text search. No cloud account, no retention window.
@@ -64,14 +64,15 @@ Where wamcp is ahead:
 
 Where others are ahead, today:
 
-- **Breadth.** delltrak has 169 tools, including group admin, business features, scheduling, polls and albums, and the official WhatsApp Cloud API. wamcp has 15: it reads everything and, when you switch it on, sends text, files and voice notes.
-- **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything. wamcp needs Go 1.26 to build until release binaries exist.
+- **Breadth.** delltrak has 169 tools, including group admin, business features, scheduling, polls and albums, and the official WhatsApp Cloud API. whatsupd has 15: it reads everything and, when you switch it on, sends text, files and voice notes.
+- **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything. whatsupd needs Go 1.26 to build until release binaries exist.
 
 ## Table of contents
 
-- [How wamcp compares](#how-wamcp-compares)
+- [How whatsupd compares](#how-whatsupd-compares)
 - [Quick start](#quick-start)
 - [Install](#install)
+- [Upgrading from wamcp](#upgrading-from-wamcp)
 - [Run it in the background](#run-it-in-the-background)
 - [Connect an AI assistant](#connect-an-ai-assistant)
 - [MCP tools](#mcp-tools)
@@ -88,14 +89,14 @@ Where others are ahead, today:
 ## Quick start
 
 ```sh
-git clone https://github.com/mi4uu/wamcp && cd wamcp
-make install      # builds and installs ~/.local/bin/wamcp
-wamcp serve       # first run prints a sign-in link and a QR code
+git clone https://github.com/mi4uu/whatsupd && cd whatsupd
+make install      # builds and installs ~/.local/bin/whatsupd
+whatsupd serve       # first run prints a sign-in link and a QR code
 ```
 
-Open the printed link (or run `wamcp open`). On your phone go to **WhatsApp > Settings > Linked devices > Link a device** and scan the QR code. You can link with a pair code instead: `wamcp serve --pair-phone +48600000000`.
+Open the printed link (or run `whatsupd open`). On your phone go to **WhatsApp > Settings > Linked devices > Link a device** and scan the QR code. You can link with a pair code instead: `whatsupd serve --pair-phone +48600000000`.
 
-After linking, the phone uploads your history in batches. Keep WhatsApp open on the phone for a few minutes. Progress shows in the web client settings, in `wamcp status` and in the `whatsapp_status` MCP tool.
+After linking, the phone uploads your history in batches. Keep WhatsApp open on the phone for a few minutes. Progress shows in the web client settings, in `whatsupd status` and in the `whatsapp_status` MCP tool.
 
 ## Install
 
@@ -104,56 +105,71 @@ After linking, the phone uploads your history in batches. Keep WhatsApp open on 
 Needs Go 1.26 or newer.
 
 ```sh
-go install github.com/mi4uu/wamcp/cmd/wamcp@latest
+go install github.com/mi4uu/whatsupd/cmd/whatsupd@latest
 ```
 
 or clone and `make install` as above (installs to `~/.local/bin`, set `PREFIX` to change it).
 
 macOS and Linux both work.
 
+## Upgrading from wamcp
+
+whatsupd was called wamcp until 2026-11-06. Upgrading keeps the WhatsApp session and the whole archive; nothing needs pairing again.
+
+1. Install the new binary (`make install` builds `whatsupd`).
+2. Run `whatsupd service install` with the flags you used before. It stops and removes the old `wamcp` LaunchAgent or systemd unit first.
+3. Point MCP clients at `whatsupd mcp` instead of `wamcp mcp`. HTTP clients keep the same URL and token.
+
+What carries over and what changes:
+
+- **Data directory.** whatsupd uses `~/.whatsupd` when it exists and `~/.wamcp` otherwise, so an old install keeps working where it is. To move it: `whatsupd service uninstall`, `mv ~/.wamcp ~/.whatsupd`, `whatsupd service install`.
+- **Environment variables.** `WAMCP_*` still work for this release, with a warning on start. Rename them to `WHATSUPD_*`.
+- **Web client.** Sign in once more; your settings carry over.
+- **Old binary.** `~/.local/bin/wamcp` is left in place. Delete it when nothing uses it.
+
 ## Run it in the background
 
 A LaunchAgent on macOS, a systemd user unit on Linux. It starts at login and restarts after crashes.
 
 ```sh
-wamcp service install     # add --auto-media to download media of new messages
-wamcp service status
-wamcp service uninstall   # the archive is kept
+whatsupd service install     # add --auto-media to download media of new messages
+whatsupd service status
+whatsupd service uninstall   # the archive is kept
 ```
 
-Logs: `~/.wamcp/logs/wamcp.log`.
+Logs: `~/.whatsupd/logs/whatsupd.log`.
 
-On Linux the unit goes to `~/.config/systemd/user/wamcp.service`. systemd stops user services when you log out, so on a server you reach over SSH run `loginctl enable-linger` once; `wamcp service install` tells you when it is needed. Without systemd (some containers, WSL), run `wamcp serve` under your own supervisor.
+On Linux the unit goes to `~/.config/systemd/user/whatsupd.service`. systemd stops user services when you log out, so on a server you reach over SSH run `loginctl enable-linger` once; `whatsupd service install` tells you when it is needed. Without systemd (some containers, WSL), run `whatsupd serve` under your own supervisor.
 
 ## Connect an AI assistant
 
-`wamcp config` prints ready-to-paste snippets with your token.
+`whatsupd config` prints ready-to-paste snippets with your token.
 
 **Claude Code** over HTTP (the daemon must be running; includes media download):
 
 ```sh
 claude mcp add --transport http --scope user whatsapp http://127.0.0.1:8765/mcp \
-  --header "Authorization: Bearer $(wamcp token --mcp)"
+  --header "Authorization: Bearer $(whatsupd token --mcp)"
 ```
 
 **Claude Desktop** and other stdio clients read the archive directly, even when the daemon is stopped:
 
 ```json
-{ "mcpServers": { "whatsapp": { "command": "/Users/you/.local/bin/wamcp", "args": ["mcp"] } } }
+{ "mcpServers": { "whatsapp": { "command": "/Users/you/.local/bin/whatsupd", "args": ["mcp"] } } }
 ```
 
 ### Remote access (claude.ai, phone)
 
-wamcp stays on `127.0.0.1`. Put a tunnel or reverse proxy with HTTPS in front of it (for example a Cloudflare Tunnel to `http://127.0.0.1:8765`) and tell wamcp the public name:
+whatsupd stays on `127.0.0.1`. Put a tunnel or reverse proxy with HTTPS in front of it (for example a Cloudflare Tunnel to `http://127.0.0.1:8765`) and tell whatsupd the public name:
 
 ```sh
-wamcp serve --public-host wa.example.com      # or: wamcp service install --public-host wa.example.com
+whatsupd serve --public-host wa.example.com      # or: whatsupd service install --public-host wa.example.com
 ```
 
 Then add a custom connector in claude.ai with the URL `https://wa.example.com/mcp`. Two ways to sign it in:
 
-- **OAuth** (works with any OAuth-only client): start the daemon with `--oauth` as well. The client registers itself, your browser opens a wamcp page that names the client and what it may do, and you confirm with the main token (`wamcp token`). Access tokens last an hour and refresh for 30 days. `wamcp oauth list` shows approved clients, `wamcp oauth revoke <id>` cuts one off at once. Ten wrong tokens in a minute lock the consent page for a minute. Use it together with `--public-host`, which makes the issuer `https://`.
-- **Static header**: a request header `Authorization: Bearer <token>` with the token from `wamcp token --mcp`, which cannot sign in to the web client (replace it any time with `wamcp token --rotate-mcp`). Anthropic documents request headers for custom connectors; check that your plan shows the field.
+- **OAuth** (works with any OAuth-only client): start the daemon with `--oauth` as well. The client registers itself, your browser opens a whatsupd page that names the client and what it may do, and you confirm with the main token (`whatsupd token`). Access tokens last an hour and refresh for 30 days. `whatsupd oauth list` shows approved clients, `whatsupd oauth revoke <id>` cuts one off at once. Ten wrong tokens in a minute lock the consent page for a minute. Use it together with `--public-host`, which makes the issuer `https://`.
+- **Static header**: a request header `Authorization: Bearer <token>` with the token from `whatsupd token --mcp`, which cannot sign in to the web client (replace it any time with `whatsupd token --rotate-mcp`). Anthropic documents request headers for custom connectors; check that your plan shows the field.
 
 With `--public-host` the web client always asks for the token, linking a phone needs a signed-in browser, and sending (if you turn it on) requires an allowlist.
 
@@ -184,33 +200,33 @@ Chats and people can be given as a JID, a phone number or part of a name.
 By default `send_message` and `send_file` do not exist: they are not in `tools/list` and calling them fails. To turn it on, start the daemon with the switch and, ideally, an allowlist:
 
 ```sh
-wamcp serve --mcp-allow-send --mcp-send-to "me,+48600000000,120363040000000001@g.us"
+whatsupd serve --mcp-allow-send --mcp-send-to "me,+48600000000,120363040000000001@g.us"
 # or for the background service
-wamcp service install --mcp-allow-send --mcp-send-to me
+whatsupd service install --mcp-allow-send --mcp-send-to me
 ```
 
 | Flag | Env | Default | What |
 |---|---|---|---|
-| `--mcp-allow-send` | `WAMCP_MCP_ALLOW_SEND=1` | off | Lists `send_message` and `send_file` on the HTTP MCP endpoint and lets stdio servers send through the daemon |
-| `--mcp-send-to` | `WAMCP_MCP_SEND_TO` | empty (any chat) | Comma-separated phone numbers with country code, JIDs, or `me` (your own chat). Names are not accepted. Required when `--listen` is not a loopback address |
+| `--mcp-allow-send` | `WHATSUPD_MCP_ALLOW_SEND=1` | off | Lists `send_message` and `send_file` on the HTTP MCP endpoint and lets stdio servers send through the daemon |
+| `--mcp-send-to` | `WHATSUPD_MCP_SEND_TO` | empty (any chat) | Comma-separated phone numbers with country code, JIDs, or `me` (your own chat). Names are not accepted. Required when `--listen` is not a loopback address |
 | `--mcp-send-per-hour` | | 20 | Maximum messages and files in any rolling hour, across all agents |
-| `--mcp-send-files-from` | `WAMCP_MCP_SEND_FILES_FROM` | empty (no paths) | The only directory `send_file` may read a path from |
+| `--mcp-send-files-from` | `WHATSUPD_MCP_SEND_FILES_FROM` | empty (no paths) | The only directory `send_file` may read a path from |
 
-Stdio clients (`wamcp mcp`) also need `--allow-send` (or the same env var) to list the tool. They forward every send to the daemon, so the daemon's policy always applies.
+Stdio clients (`whatsupd mcp`) also need `--allow-send` (or the same env var) to list the tool. They forward every send to the daemon, so the daemon's policy always applies.
 
 What the daemon enforces on every `send_message` and `send_file` call:
 
 - **Allowlist.** Recipients off the list are refused. Group members are not checked: allowing a group allows writing to that group.
 - **Rate limit.** Counted from the audit log, so a restart does not reset it. Failed sends count too, since an error does not prove the message was dropped.
 - **No double sends.** A call with the same `idempotency_key` returns the first result instead of sending again (24 hours). Without a key, the same text to the same chat within 10 minutes counts as a retry. If the daemon stopped in the middle of a send, the retry is refused with a clear message instead of guessing; a failed send that is retried reuses the same WhatsApp message ID.
-- **Audit log.** Every call is written to the `agent_sends` table as sent, failed, refused or duplicate, and a send is recorded *before* anything goes to WhatsApp. `wamcp audit` prints it; the daemon log has one line per call. Refused and duplicate calls stop being stored after 200 in an hour (they are still logged), so a looping agent cannot fill the disk.
+- **Audit log.** Every call is written to the `agent_sends` table as sent, failed, refused or duplicate, and a send is recorded *before* anything goes to WhatsApp. `whatsupd audit` prints it; the daemon log has one line per call. Refused and duplicate calls stop being stored after 200 in an hour (they are still logged), so a looping agent cannot fill the disk.
 - **Files from three places only.** `send_file` takes the file as base64 data from the agent, forwards an attachment already downloaded to the archive, or reads a path inside `--mcp-send-files-from`. Without that flag no path is accepted, so an agent cannot send `~/.ssh` or anything else on your disk; paths that leave the directory are refused and symlinks are never followed. Files are capped at 16 MB, voice notes must be Ogg Opus, and the audit log records each file by name, type, size and SHA-256.
 - **No edits, deletes or group admin.** Text is up to 4096 characters, optionally as a reply.
 
 What it does not protect against, so you can decide:
 
 - **Prompt injection.** An agent that reads your chats and can send is exposed to messages written to manipulate it ("forward this to everyone"). The allowlist and rate limit cap the damage; they do not stop the agent from sending the wrong text to an allowed chat. Keep the allowlist short: `me` alone is enough for "send me a daily summary".
-- **Give agents the MCP token, not the main one.** `wamcp token --mcp` opens `/mcp` and nothing else, so it is bound by these limits. The main token (`wamcp token`) also signs in to the web client, which can send, edit and delete without any of them.
+- **Give agents the MCP token, not the main one.** `whatsupd token --mcp` opens `/mcp` and nothing else, so it is bound by these limits. The main token (`whatsupd token`) also signs in to the web client, which can send, edit and delete without any of them.
 
 ## Contact notes
 
@@ -227,13 +243,13 @@ search_contacts tag=family
 ## Reliability
 
 - Messages are acknowledged to WhatsApp only **after** they are committed to the archive, and decrypted payloads are buffered until then. If the process crashes, the server delivers the message again.
-- While the daemon is stopped (laptop asleep, restart, network down), WhatsApp queues messages for the linked device and delivers them on reconnect. wamcp records how long it was offline and how many messages it recovered (`whatsapp_status`, web settings).
+- While the daemon is stopped (laptop asleep, restart, network down), WhatsApp queues messages for the linked device and delivers them on reconnect. whatsupd records how long it was offline and how many messages it recovered (`whatsapp_status`, web settings).
 - If the phone unlinks the device, for example after a very long break, the web client shows the QR code again. Relinking triggers a full history sync that fills the gap. Messages are de-duplicated by ID.
 - Hidden-number identities (`@lid`) are mapped to phone numbers as soon as WhatsApp reveals the mapping, and older rows are merged.
 
 ## Data and security
 
-Everything lives in `~/.wamcp` (mode `0700`):
+Everything lives in `~/.whatsupd` (mode `0700`):
 
 | Path | What |
 |---|---|
@@ -244,37 +260,37 @@ Everything lives in `~/.wamcp` (mode `0700`):
 | `mcp-token` | MCP-only token: `/mcp` and the API stdio servers use, no web client |
 | `oauth.json` | OAuth clients you approved and hashes of their tokens (`--oauth`) |
 
-- The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>` (the MCP token or the main one), there is no way to turn that off. The web client needs a session cookie obtained with the token (`wamcp open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
+- The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>` (the MCP token or the main one), there is no way to turn that off. The web client needs a session cookie obtained with the token (`whatsupd open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
 - Behind a reverse proxy or tunnel (cloudflared, nginx, Caddy) use `--public-host` or `--web-auth token`. Without them, requests that carry proxy headers (`X-Forwarded-For`, `Forwarded`, `Cf-Connecting-Ip` and similar) or come from a known proxy process (cloudflared, ngrok, ssh, nginx, Caddy and others) are never signed in automatically, but a proxy that is neither would look like a local browser.
-- When wamcp is reachable from other machines (`--public-host` or a non-loopback `--listen`), linking a phone needs a signed-in browser, so a visitor cannot link their own account to your daemon.
-- Messages deleted for everyone keep their content in the archive and are marked with who deleted them and when. They stay searchable. Run `wamcp serve --deleted remove` to wipe them instead, like WhatsApp does.
+- When whatsupd is reachable from other machines (`--public-host` or a non-loopback `--listen`), linking a phone needs a signed-in browser, so a visitor cannot link their own account to your daemon.
+- Messages deleted for everyone keep their content in the archive and are marked with who deleted them and when. They stay searchable. Run `whatsupd serve --deleted remove` to wipe them instead, like WhatsApp does.
 - The daemon does not mark you "online" in the background, so your phone keeps its notifications. The web client shows you online only while its tab is visible.
 
 ## Limitations
 
-- wamcp uses the unofficial multi-device protocol. WhatsApp's terms do not allow unofficial clients. The risk of account restrictions is low for read-mostly personal use, but it is not zero.
+- whatsupd uses the unofficial multi-device protocol. WhatsApp's terms do not allow unofficial clients. The risk of account restrictions is low for read-mostly personal use, but it is not zero.
 - History depth depends on what the phone sends. Older messages can be requested per chat while the phone is online.
-- Media links expire after some weeks. wamcp then asks the phone to re-upload, which works only if the phone still has the file.
+- Media links expire after some weeks. whatsupd then asks the phone to re-upload, which works only if the phone still has the file.
 - Not archived yet: poll votes, channel (newsletter) posts, status view lists. Voice recording in the browser is not supported (audio files can be sent).
 
 ## CLI
 
 ```text
-wamcp serve     Run the daemon: link and sync WhatsApp, web client, MCP over HTTP
-wamcp mcp       Serve MCP over stdio (reads the archive)
-wamcp open      Open the web client in the browser, signed in
-wamcp config    Print MCP client configuration
-wamcp token     Print the access token (--mcp: MCP-only token, --rotate-mcp: replace it)
-wamcp status    Show daemon, sync and archive status
-wamcp audit     Show messages MCP agents sent or tried to send
-wamcp oauth     list | revoke <client id>: OAuth clients you approved (serve --oauth)
-wamcp service   install | uninstall | restart | status (macOS and Linux)
-wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
-wamcp bug       Open a pre-filled GitHub bug report (version and OS only)
-wamcp version
+whatsupd serve     Run the daemon: link and sync WhatsApp, web client, MCP over HTTP
+whatsupd mcp       Serve MCP over stdio (reads the archive)
+whatsupd open      Open the web client in the browser, signed in
+whatsupd config    Print MCP client configuration
+whatsupd token     Print the access token (--mcp: MCP-only token, --rotate-mcp: replace it)
+whatsupd status    Show daemon, sync and archive status
+whatsupd audit     Show messages MCP agents sent or tried to send
+whatsupd oauth     list | revoke <client id>: OAuth clients you approved (serve --oauth)
+whatsupd service   install | uninstall | restart | status (macOS and Linux)
+whatsupd logout    Unlink this device from WhatsApp (daemon must be stopped)
+whatsupd bug       Open a pre-filled GitHub bug report (version and OS only)
+whatsupd version
 ```
 
-Common flags: `--data-dir` (default `~/.wamcp`, env `WAMCP_DATA_DIR`) and `--listen` (default `127.0.0.1:8765`, env `WAMCP_LISTEN`). Run `wamcp <command> -h` for the rest.
+Common flags: `--data-dir` (default `~/.whatsupd`, env `WHATSUPD_DATA_DIR`) and `--listen` (default `127.0.0.1:8765`, env `WHATSUPD_LISTEN`). Run `whatsupd <command> -h` for the rest.
 
 ## Development
 
@@ -292,12 +308,12 @@ make build
 | `internal/mcpserver` | MCP tools |
 | `internal/web` | HTTP API and the embedded web client |
 | `internal/service` | launchd and systemd integration |
-| `cmd/wamcp` | The CLI |
+| `cmd/whatsupd` | The CLI |
 
 ## Bugs, ideas and security reports
 
-- **Bug:** `wamcp bug`, or Settings > About > Report a bug in the web client. Both open a GitHub issue form with the version, OS and setup filled in, and nothing from your archive. Issues are public, so leave out phone numbers and message text.
-- **Idea:** [suggest a feature](https://github.com/mi4uu/wamcp/issues/new?template=feature_request.yml).
+- **Bug:** `whatsupd bug`, or Settings > About > Report a bug in the web client. Both open a GitHub issue form with the version, OS and setup filled in, and nothing from your archive. Issues are public, so leave out phone numbers and message text.
+- **Idea:** [suggest a feature](https://github.com/mi4uu/whatsupd/issues/new?template=feature_request.yml).
 - **Security problem:** report it privately, see [SECURITY.md](SECURITY.md).
 
 ## License

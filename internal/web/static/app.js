@@ -1,4 +1,4 @@
-// wamcp web client: a WhatsApp Web–like client for the local archive.
+// whatsupd web client: a WhatsApp Web–like client for the local archive.
 // No framework: small DOM helpers, one state object, server-sent events.
 
 const $ = (id) => document.getElementById(id);
@@ -44,10 +44,10 @@ const S = {
 
 function loadSettings() {
   const def = { notify: false, autoRead: false, online: true };
-  try { return { ...def, ...JSON.parse(localStorage.getItem('wamcp.settings') || '{}') }; } catch { return def; }
+  try { return { ...def, ...JSON.parse(localStorage.getItem('whatsupd.settings') || localStorage.getItem('wamcp.settings') || '{}') }; } catch { return def; }
 }
 function saveSettings() {
-  try { localStorage.setItem('wamcp.settings', JSON.stringify(S.settings)); } catch {}
+  try { localStorage.setItem('whatsupd.settings', JSON.stringify(S.settings)); } catch {}
 }
 
 // ---------- API
@@ -297,7 +297,7 @@ function showLogin() {
   hideScreens();
   $('login').hidden = false;
   if (new URLSearchParams(location.search).get('login') === 'expired') {
-    $('login-error').textContent = 'That sign-in link expired. Run `wamcp open` again.';
+    $('login-error').textContent = 'That sign-in link expired. Run `whatsupd open` again.';
   }
   $('login-token').focus();
 }
@@ -423,7 +423,7 @@ function updateConn(state) {
   const msgs = {
     disconnected: 'Reconnecting to WhatsApp… messages will catch up automatically.',
     connecting: 'Connecting to WhatsApp…',
-    replaced: 'Another program is using this WhatsApp session. Stop it and restart wamcp.',
+    replaced: 'Another program is using this WhatsApp session. Stop it and restart whatsupd.',
     temporarily_banned: 'WhatsApp temporarily banned this account from linked devices.',
     logged_out: 'This device was unlinked. Link it again to continue syncing.',
   };
@@ -1375,7 +1375,7 @@ function settingsDialog() {
     aboutBox,
   ], [
     h('button', { class: 'btn danger', onclick: () => {
-      modal('Unlink this device?', [h('p', {}, 'wamcp stops syncing until you link it again. The archive stays on disk.')], [
+      modal('Unlink this device?', [h('p', {}, 'whatsupd stops syncing until you link it again. The archive stays on disk.')], [
         h('button', { class: 'btn', onclick: closeModal }, 'Cancel'),
         h('button', { class: 'btn danger', onclick: async () => { if (await attempt(() => api('/api/device/logout', { json: {} }))) { closeModal(); showPair(); } } }, 'Unlink'),
       ]);

@@ -1,5 +1,5 @@
 name: Feature request
-description: Something wamcp should do.
+description: Something whatsupd should do.
 labels: [enhancement]
 body:
   - type: textarea
@@ -12,7 +12,7 @@ body:
   - type: textarea
     id: idea
     attributes:
-      label: How could wamcp help?
+      label: How could whatsupd help?
       description: A tool, a flag, a change to the web client. Optional.
   - type: textarea
     id: others

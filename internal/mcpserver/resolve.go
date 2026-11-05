@@ -8,7 +8,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/mi4uu/wamcp/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/archive"
 )
 
 // resolver maps user input (JID, phone number or name) to JIDs.

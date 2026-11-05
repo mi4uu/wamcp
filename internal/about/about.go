@@ -7,9 +7,9 @@ import (
 	"runtime"
 )
 
-const Repo = "https://github.com/mi4uu/wamcp"
+const Repo = "https://github.com/mi4uu/whatsupd"
 
-// Info is what the web client's About section and `wamcp bug` show.
+// Info is what the web client's About section and `whatsupd bug` show.
 type Info struct {
 	Version     string `json:"version"`
 	Go          string `json:"go"`

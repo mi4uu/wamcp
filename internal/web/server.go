@@ -25,11 +25,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mi4uu/wamcp/internal/about"
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/oauth"
-	"github.com/mi4uu/wamcp/internal/outbox"
-	"github.com/mi4uu/wamcp/internal/wa"
+	"github.com/mi4uu/whatsupd/internal/about"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/oauth"
+	"github.com/mi4uu/whatsupd/internal/outbox"
+	"github.com/mi4uu/whatsupd/internal/wa"
 )
 
 //go:embed static
@@ -80,7 +80,7 @@ type Options struct {
 	Log          *slog.Logger
 	AllowAnyHost bool // set when listening on a non-loopback address
 	// PublicHosts are extra Host header names accepted on a loopback
-	// listener, for a reverse proxy or tunnel in front of wamcp.
+	// listener, for a reverse proxy or tunnel in front of whatsupd.
 	PublicHosts []string
 	// TrustLocal signs in every browser connecting from this machine, so the
 	// web client needs no token. /mcp always requires the bearer token.
@@ -99,7 +99,7 @@ type Options struct {
 // limit, far below what would strain the daemon.
 const MaxMCPBody = outbox.DefaultMaxFileBytes/3*4 + 1<<20
 
-const cookieName = "wamcp_session"
+const cookieName = "whatsupd_session"
 
 type server struct {
 	opt     Options
@@ -205,7 +205,7 @@ func (x *Server) NewLoginCode() string { return x.s.newLoginCode() }
 // Handler builds the HTTP handler.
 func Handler(opt Options) *Server {
 	mac := hmac.New(sha256.New, []byte(opt.Token))
-	mac.Write([]byte("wamcp-web-session"))
+	mac.Write([]byte("whatsupd-web-session"))
 	s := &server{opt: opt, session: hex.EncodeToString(mac.Sum(nil)), codes: map[string]time.Time{}, tabs: map[string]bool{},
 		streams: map[string]int{}, goneTimers: map[string]*time.Timer{}}
 
@@ -362,12 +362,12 @@ func (s *server) requireBearer(next http.Handler, agent bool) http.Handler {
 		valid := ok && (equal(got, s.opt.Token) || (agent && s.opt.MCPToken != "" && equal(got, s.opt.MCPToken)) ||
 			(agent && s.opt.OAuth != nil && s.opt.OAuth.S.Valid(got)))
 		if !valid {
-			challenge := `Bearer realm="wamcp"`
+			challenge := `Bearer realm="whatsupd"`
 			if agent && s.opt.OAuth != nil {
 				challenge += `, resource_metadata="` + s.opt.OAuth.ResourceMetadataURL(r) + `"`
 			}
 			w.Header().Set("WWW-Authenticate", challenge)
-			http.Error(w, "missing or invalid bearer token (see `wamcp config`)", http.StatusUnauthorized)
+			http.Error(w, "missing or invalid bearer token (see `whatsupd config`)", http.StatusUnauthorized)
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -427,7 +427,7 @@ var lsofPath = sync.OnceValue(func() string {
 })
 
 // sameUserPeer reports whether the client end of a loopback TCP connection
-// belongs to a process of the OS user running wamcp. Loopback alone is not
+// belongs to a process of the OS user running whatsupd. Loopback alone is not
 // proof: other users on the machine can connect too. Checked with lsof, only
 // when a browser without a session opens the page.
 func sameUserPeer(r *http.Request) bool {
@@ -468,7 +468,7 @@ func sameUserPeer(r *http.Request) bool {
 func (s *server) requireSession(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !s.signedIn(r) {
-			writeError(w, http.StatusUnauthorized, errors.New("sign in first (run `wamcp open`)"))
+			writeError(w, http.StatusUnauthorized, errors.New("sign in first (run `whatsupd open`)"))
 			return
 		}
 		next.ServeHTTP(w, r)
@@ -642,7 +642,7 @@ func (s *server) exposed() bool { return s.opt.AllowAnyHost || len(s.opt.PublicH
 func (s *server) pairing(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.exposed() && !s.signedIn(r) {
-			writeError(w, http.StatusUnauthorized, errors.New("sign in first (run `wamcp open` or use the link printed by `wamcp serve`)"))
+			writeError(w, http.StatusUnauthorized, errors.New("sign in first (run `whatsupd open` or use the link printed by `whatsupd serve`)"))
 			return
 		}
 		h(w, r)

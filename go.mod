@@ -1,4 +1,4 @@
-module github.com/mi4uu/wamcp
+module github.com/mi4uu/whatsupd
 
 go 1.26.0
 

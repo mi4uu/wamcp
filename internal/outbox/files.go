@@ -137,7 +137,7 @@ func (o *Outbox) resolve(ctx context.Context, f File) (File, error) {
 
 func (o *Outbox) readPath(p string) ([]byte, string, error) {
 	if o.filesFD == nil {
-		return nil, "", errors.New("sending files by path is off; pass the file as data, or start wamcp with --mcp-send-files-from DIR")
+		return nil, "", errors.New("sending files by path is off; pass the file as data, or start whatsupd with --mcp-send-files-from DIR")
 	}
 	outside := fmt.Errorf("path %s is outside %s, the only directory files may be sent from", p, o.filesDir)
 	rel := filepath.Clean(p)

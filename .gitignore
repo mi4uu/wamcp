@@ -3,5 +3,5 @@
 *.db
 *.db-wal
 *.db-shm
-.wamcp/
+.whatsupd/
 .DS_Store

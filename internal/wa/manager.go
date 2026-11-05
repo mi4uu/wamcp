@@ -28,8 +28,8 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/ingest"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/ingest"
 )
 
 // Connection states reported in DaemonStatus.State.
@@ -93,7 +93,7 @@ type Manager struct {
 // New opens the whatsmeow device store and prepares the manager.
 func New(ctx context.Context, cfg Config, arc *archive.Store, log *slog.Logger) (*Manager, error) {
 	if cfg.DeviceName == "" {
-		cfg.DeviceName = "wamcp"
+		cfg.DeviceName = "whatsupd"
 	}
 	store.SetOSInfo(cfg.DeviceName, [3]uint32{0, 1, 0})
 	store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_DESKTOP.Enum()
@@ -320,7 +320,7 @@ func (m *Manager) consumeQR(ctx context.Context, cli *whatsmeow.Client, ch <-cha
 				return false, fmt.Errorf("passkey confirmation: %w", err)
 			}
 		case whatsmeow.QRChannelEventPasskeyRequest:
-			return false, errors.New("this account asks for passkey pairing, which wamcp does not support; use the QR code or a pair code")
+			return false, errors.New("this account asks for passkey pairing, which whatsupd does not support; use the QR code or a pair code")
 		case whatsmeow.QRChannelEventError:
 			return false, item.Error
 		case whatsmeow.QRChannelTimeout.Event:

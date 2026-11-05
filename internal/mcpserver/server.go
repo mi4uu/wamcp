@@ -16,8 +16,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/outbox"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/outbox"
 )
 
 // Live is implemented by the running daemon. It is nil for the stdio server,
@@ -52,7 +52,7 @@ type server struct {
 	now    func() time.Time
 }
 
-const instructions = `Read-only access to the user's WhatsApp account, archived locally and kept in sync by the wamcp daemon:
+const instructions = `Read-only access to the user's WhatsApp account, archived locally and kept in sync by the whatsupd daemon:
 all chats, messages (text, captions, media metadata, replies, reactions, edits, deletions), groups and their members,
 contacts, call history, plus the user's own notes on contacts (alias, description, priority 1-5, tags, custom fields).
 Typical flow: list_chats or search_contacts to find a chat, then get_messages; search_messages for full-text search
@@ -76,7 +76,7 @@ func New(arc *archive.Store, live Live, version string, opts ...Option) *mcp.Ser
 	if s.sender != nil {
 		instr = strings.Replace(instr, "Read-only access", "Access", 1) + fmt.Sprintf(sendInstructions, s.sender.Policy())
 	}
-	srv := mcp.NewServer(&mcp.Implementation{Name: "wamcp", Title: "WhatsApp", Version: version},
+	srv := mcp.NewServer(&mcp.Implementation{Name: "whatsupd", Title: "WhatsApp", Version: version},
 		&mcp.ServerOptions{Instructions: instr})
 	ro := &mcp.ToolAnnotations{ReadOnlyHint: true, OpenWorldHint: ptr(false)}
 
@@ -193,7 +193,7 @@ func (s *server) status(ctx context.Context, _ *mcp.CallToolRequest, _ statusIn)
 	f := formatter{loc: s.loc}
 	var b strings.Builder
 	if st == nil {
-		b.WriteString("Daemon: never ran (start it with `wamcp serve`)\n")
+		b.WriteString("Daemon: never ran (start it with `whatsupd serve`)\n")
 	} else {
 		state := st.State
 		if s.live == nil && time.Since(st.UpdatedAt) > 3*time.Minute {

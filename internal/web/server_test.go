@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mi4uu/wamcp/internal/about"
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/demo"
-	"github.com/mi4uu/wamcp/internal/ingest"
-	"github.com/mi4uu/wamcp/internal/wa"
+	"github.com/mi4uu/whatsupd/internal/about"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/demo"
+	"github.com/mi4uu/whatsupd/internal/ingest"
+	"github.com/mi4uu/whatsupd/internal/wa"
 )
 
 // fakeDaemon stands in for wa.Manager.
@@ -211,11 +211,11 @@ func TestSessionFlow(t *testing.T) {
 }
 
 // TestDemoServer serves the web client with demo data for manual previews:
-// WAMCP_DEMO_ADDR=127.0.0.1:8799 go test ./internal/web -run TestDemoServer -timeout 0
+// WHATSUPD_DEMO_ADDR=127.0.0.1:8799 go test ./internal/web -run TestDemoServer -timeout 0
 func TestDemoServer(t *testing.T) {
-	addr := os.Getenv("WAMCP_DEMO_ADDR")
+	addr := os.Getenv("WHATSUPD_DEMO_ADDR")
 	if addr == "" {
-		t.Skip("set WAMCP_DEMO_ADDR to run the demo server")
+		t.Skip("set WHATSUPD_DEMO_ADDR to run the demo server")
 	}
 	srv, _ := setup(t)
 	srv.s.opt.About = about.New("dev", "demo data")

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mi4uu/wamcp/internal/oauth"
+	"github.com/mi4uu/whatsupd/internal/oauth"
 )
 
 func TestOAuthConsentLocksAfterWrongTokens(t *testing.T) {

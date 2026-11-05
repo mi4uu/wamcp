@@ -1,4 +1,4 @@
-// Command wamcp is a WhatsApp linked-device client that archives everything
+// Command whatsupd is a WhatsApp linked-device client that archives everything
 // locally, serves a web client, and exposes the archive to AI assistants as
 // an MCP server.
 package main
@@ -27,38 +27,38 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/term"
 
-	"github.com/mi4uu/wamcp/internal/about"
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/config"
-	"github.com/mi4uu/wamcp/internal/mcpserver"
-	"github.com/mi4uu/wamcp/internal/oauth"
-	"github.com/mi4uu/wamcp/internal/outbox"
-	"github.com/mi4uu/wamcp/internal/service"
-	"github.com/mi4uu/wamcp/internal/wa"
-	"github.com/mi4uu/wamcp/internal/web"
+	"github.com/mi4uu/whatsupd/internal/about"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/config"
+	"github.com/mi4uu/whatsupd/internal/mcpserver"
+	"github.com/mi4uu/whatsupd/internal/oauth"
+	"github.com/mi4uu/whatsupd/internal/outbox"
+	"github.com/mi4uu/whatsupd/internal/service"
+	"github.com/mi4uu/whatsupd/internal/wa"
+	"github.com/mi4uu/whatsupd/internal/web"
 )
 
 var version = "dev"
 
-const usage = `wamcp: WhatsApp archive, web client and MCP server
+const usage = `whatsupd: WhatsApp archive, web client and MCP server
 
 Usage:
-  wamcp serve     Run the daemon: link/sync WhatsApp, web client and MCP over HTTP
-  wamcp mcp       Serve MCP over stdio (reads the archive; for Claude Desktop & co.)
-  wamcp open      Open the web client in the browser (signs you in)
-  wamcp config    Print MCP client configuration (Claude Code, Claude Desktop)
-  wamcp token     Print the access token (--mcp: the MCP-only token, --rotate-mcp: replace it)
-  wamcp status    Show daemon, sync and archive status
-  wamcp audit     Show messages MCP agents sent or tried to send
-  wamcp oauth     list | revoke <client id>: OAuth clients you approved (--oauth)
-  wamcp service   install | uninstall | restart | status: run the daemon in the background (macOS, Linux)
-  wamcp bug       Open a pre-filled GitHub bug report (version and OS only)
-  wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
-  wamcp version
+  whatsupd serve     Run the daemon: link/sync WhatsApp, web client and MCP over HTTP
+  whatsupd mcp       Serve MCP over stdio (reads the archive; for Claude Desktop & co.)
+  whatsupd open      Open the web client in the browser (signs you in)
+  whatsupd config    Print MCP client configuration (Claude Code, Claude Desktop)
+  whatsupd token     Print the access token (--mcp: the MCP-only token, --rotate-mcp: replace it)
+  whatsupd status    Show daemon, sync and archive status
+  whatsupd audit     Show messages MCP agents sent or tried to send
+  whatsupd oauth     list | revoke <client id>: OAuth clients you approved (--oauth)
+  whatsupd service   install | uninstall | restart | status: run the daemon in the background (macOS, Linux)
+  whatsupd bug       Open a pre-filled GitHub bug report (version and OS only)
+  whatsupd logout    Unlink this device from WhatsApp (daemon must be stopped)
+  whatsupd version
 
-Common flags: --data-dir (default ~/.wamcp, env WAMCP_DATA_DIR),
-              --listen (default 127.0.0.1:8765, env WAMCP_LISTEN)
-Run "wamcp <command> -h" for command flags.
+Common flags: --data-dir (default ~/.whatsupd, env WHATSUPD_DATA_DIR),
+              --listen (default 127.0.0.1:8765, env WHATSUPD_LISTEN)
+Run "whatsupd <command> -h" for command flags.
 `
 
 func main() {
@@ -92,7 +92,7 @@ func main() {
 	case "bug":
 		err = cmdBug(args)
 	case "version", "--version", "-v":
-		fmt.Println("wamcp", version)
+		fmt.Println("whatsupd", version)
 	case "help", "--help", "-h":
 		fmt.Print(usage)
 	default:
@@ -173,13 +173,13 @@ type sendFlags struct {
 }
 
 func (f *sendFlags) register(fs *flag.FlagSet) {
-	fs.BoolVar(&f.allow, "mcp-allow-send", envBool("WAMCP_MCP_ALLOW_SEND"),
-		"let MCP agents send WhatsApp messages and files (send_message and send_file tools); off by default, env WAMCP_MCP_ALLOW_SEND")
-	fs.StringVar(&f.to, "mcp-send-to", os.Getenv("WAMCP_MCP_SEND_TO"),
-		"comma-separated recipients agents may send to: phone numbers with country code, JIDs, or me; empty allows any chat (loopback only), env WAMCP_MCP_SEND_TO")
+	fs.BoolVar(&f.allow, "mcp-allow-send", envBool("MCP_ALLOW_SEND"),
+		"let MCP agents send WhatsApp messages and files (send_message and send_file tools); off by default, env WHATSUPD_MCP_ALLOW_SEND")
+	fs.StringVar(&f.to, "mcp-send-to", config.Env("MCP_SEND_TO"),
+		"comma-separated recipients agents may send to: phone numbers with country code, JIDs, or me; empty allows any chat (loopback only), env WHATSUPD_MCP_SEND_TO")
 	fs.IntVar(&f.perHour, "mcp-send-per-hour", outbox.DefaultPerHour, "maximum messages agents may send in any rolling hour")
-	fs.StringVar(&f.filesFrom, "mcp-send-files-from", os.Getenv("WAMCP_MCP_SEND_FILES_FROM"),
-		"the only directory send_file may read a path from; empty allows no paths (files as data or archived media still work), env WAMCP_MCP_SEND_FILES_FROM")
+	fs.StringVar(&f.filesFrom, "mcp-send-files-from", config.Env("MCP_SEND_FILES_FROM"),
+		"the only directory send_file may read a path from; empty allows no paths (files as data or archived media still work), env WHATSUPD_MCP_SEND_FILES_FROM")
 }
 
 func (f *sendFlags) args() []string {
@@ -251,7 +251,7 @@ func (r *remoteLive) call(ctx context.Context, method, path string, in, out any)
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := r.http.Do(req)
 	if err != nil {
-		return fmt.Errorf("the wamcp daemon is not reachable at %s (install it with `wamcp service install`): %w", r.base, err)
+		return fmt.Errorf("the whatsupd daemon is not reachable at %s (install it with `whatsupd service install`): %w", r.base, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -315,7 +315,7 @@ func (r *remoteSender) SendFile(ctx context.Context, req outbox.Request) (outbox
 	return out, err
 }
 
-func (r *remoteSender) Policy() string { return r.policy + " (enforced by the wamcp daemon)" }
+func (r *remoteSender) Policy() string { return r.policy + " (enforced by the whatsupd daemon)" }
 
 // openLog returns the log destination: stderr, or a file rotated to
 // <path>.1 whenever it grows past 20 MB.
@@ -363,7 +363,7 @@ func (l *rotatingLog) Write(p []byte) (int, error) {
 		_ = os.Rename(l.path, l.path+".1")
 		if err := l.open(); err != nil {
 			l.f = nil
-			fmt.Fprintf(os.Stderr, "wamcp: cannot reopen log %s (%v); logging to stderr\n", l.path, err)
+			fmt.Fprintf(os.Stderr, "whatsupd: cannot reopen log %s (%v); logging to stderr\n", l.path, err)
 			return os.Stderr.Write(p)
 		}
 	}
@@ -397,7 +397,7 @@ func cmdServe(args []string) (retErr error) {
 	var send sendFlags
 	send.register(fs)
 	pairPhone := fs.String("pair-phone", "", "link with a pair code for this phone number instead of scanning the QR code")
-	deviceName := fs.String("device-name", "wamcp", "name shown in WhatsApp → Linked devices")
+	deviceName := fs.String("device-name", "whatsupd", "name shown in WhatsApp → Linked devices")
 	noFullHistory := fs.Bool("no-full-history", false, "do not ask the phone for the complete history when linking")
 	autoMedia := fs.Bool("auto-media", false, "download media of new messages automatically")
 	mediaMaxMB := fs.Int64("media-max-mb", 25, "size limit for --auto-media downloads")
@@ -405,10 +405,10 @@ func cmdServe(args []string) (retErr error) {
 	waLogLevel := fs.String("wa-log-level", "warn", "log level of the WhatsApp library")
 	logFile := fs.String("log-file", "", "write logs to this file instead of stderr")
 	deleted := fs.String("deleted", "keep", "messages deleted for everyone: keep (content stays, marked as deleted) or remove (wiped like in WhatsApp)")
-	publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"),
-		"comma-separated host names of a reverse proxy or tunnel in front of wamcp (for example wa.example.com); turns on token sign-in for the web client, env WAMCP_PUBLIC_HOST")
-	useOAuth := fs.Bool("oauth", envBool("WAMCP_OAUTH"),
-		"let MCP clients connect with OAuth (claude.ai connectors and others); you approve each client with the access token, env WAMCP_OAUTH")
+	publicHost := fs.String("public-host", config.Env("PUBLIC_HOST"),
+		"comma-separated host names of a reverse proxy or tunnel in front of whatsupd (for example wa.example.com); turns on token sign-in for the web client, env WHATSUPD_PUBLIC_HOST")
+	useOAuth := fs.Bool("oauth", envBool("OAUTH"),
+		"let MCP clients connect with OAuth (claude.ai connectors and others); you approve each client with the access token, env WHATSUPD_OAUTH")
 	webAuth := fs.String("web-auth", "local", "web client sign-in: local (browsers on this machine are signed in automatically) or token")
 	asService := fs.Bool("service", false, "running as the background service (stop restarting after repeated startup failures)")
 	_ = fs.Parse(args)
@@ -427,7 +427,7 @@ func cmdServe(args []string) (retErr error) {
 		started := time.Now()
 		defer func() {
 			if retErr != nil && time.Since(started) < time.Minute && crashLoop(paths, retErr) {
-				fmt.Fprintf(os.Stderr, "wamcp: giving up after repeated startup failures: %v\nFix the cause, then run `wamcp service restart`.\n", retErr)
+				fmt.Fprintf(os.Stderr, "whatsupd: giving up after repeated startup failures: %v\nFix the cause, then run `whatsupd service restart`.\n", retErr)
 				retErr = nil // exit 0: neither launchd nor systemd restarts a successful exit
 			}
 		}()
@@ -520,20 +520,20 @@ func cmdServe(args []string) (retErr error) {
 	if exposed {
 		log.Warn("reachable beyond this machine; anyone who can reach it and has the token can read your WhatsApp", "listen", c.listen, "public_host", publicHosts)
 	}
-	log.Info("wamcp started", "version", version, "web", c.baseURL(), "mcp", c.baseURL()+"/mcp", "data", c.dataDir)
+	log.Info("whatsupd started", "version", version, "web", c.baseURL(), "mcp", c.baseURL()+"/mcp", "data", c.dataDir)
 	if interactive {
 		link := c.baseURL()
 		if *webAuth == "token" || exposed {
 			link += "/login?code=" + webSrv.NewLoginCode()
 		}
-		fmt.Fprintf(os.Stderr, "\n  Web client:   %s\n  MCP endpoint: %s/mcp  (see `wamcp config`)\n\n", link, c.baseURL())
+		fmt.Fprintf(os.Stderr, "\n  Web client:   %s\n  MCP endpoint: %s/mcp  (see `whatsupd config`)\n\n", link, c.baseURL())
 	}
 
 	runErr := mgr.Run(ctx)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	_ = httpSrv.Shutdown(shutdownCtx)
-	log.Info("wamcp stopped")
+	log.Info("whatsupd stopped")
 	return runErr
 }
 
@@ -541,8 +541,8 @@ func cmdMCP(args []string) error {
 	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
 	var c common
 	c.register(fs)
-	allowSend := fs.Bool("allow-send", envBool("WAMCP_MCP_ALLOW_SEND"),
-		"offer send_message; the daemon must also run with --mcp-allow-send, and it enforces the policy (env WAMCP_MCP_ALLOW_SEND)")
+	allowSend := fs.Bool("allow-send", envBool("MCP_ALLOW_SEND"),
+		"offer send_message; the daemon must also run with --mcp-allow-send, and it enforces the policy (env WHATSUPD_MCP_ALLOW_SEND)")
 	_ = fs.Parse(args)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -606,7 +606,7 @@ func cmdToken(args []string) error {
 		if tok, err = paths.RotateMCPToken(); err != nil {
 			return err
 		}
-		fmt.Fprintln(os.Stderr, "New MCP token. Restart the daemon (`wamcp service restart`) and update your MCP clients.")
+		fmt.Fprintln(os.Stderr, "New MCP token. Restart the daemon (`whatsupd service restart`) and update your MCP clients.")
 	case *mcpOnly:
 		tok, err = paths.LoadOrCreateMCPToken()
 	default:
@@ -638,7 +638,7 @@ func cmdConfig(args []string) error {
 	}}, "", "  ")
 	fmt.Printf(`MCP endpoint (daemon must be running): %[1]s/mcp
 MCP token: %[2]s
-  (MCP only: it cannot sign in to the web client. Replace it with `+"`wamcp token --rotate-mcp`"+`.)
+  (MCP only: it cannot sign in to the web client. Replace it with `+"`whatsupd token --rotate-mcp`"+`.)
 
 Claude Code (HTTP, all tools incl. media download):
   claude mcp add --transport http --scope user whatsapp %[1]s/mcp --header "Authorization: Bearer %[2]s"
@@ -658,13 +658,13 @@ func cmdOpen(args []string) error {
 	_ = fs.Parse(args)
 	tok, err := c.paths().ReadToken()
 	if err != nil {
-		return errors.New("no token yet; start the daemon first with `wamcp serve`")
+		return errors.New("no token yet; start the daemon first with `whatsupd serve`")
 	}
 	req, _ := http.NewRequest(http.MethodPost, c.baseURL()+"/api/login-code", bytes.NewReader(nil))
 	req.Header.Set("Authorization", "Bearer "+tok)
 	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(req)
 	if err != nil {
-		return fmt.Errorf("the daemon is not reachable at %s (start it with `wamcp serve` or `wamcp service install`): %w", c.baseURL(), err)
+		return fmt.Errorf("the daemon is not reachable at %s (start it with `whatsupd serve` or `whatsupd service install`): %w", c.baseURL(), err)
 	}
 	defer resp.Body.Close()
 	var out struct {
@@ -767,7 +767,7 @@ func cmdAudit(args []string) error {
 
 func cmdOAuth(args []string) error {
 	if len(args) == 0 || (args[0] != "list" && args[0] != "revoke") {
-		return errors.New("usage: wamcp oauth list | revoke <client id>")
+		return errors.New("usage: whatsupd oauth list | revoke <client id>")
 	}
 	fs := flag.NewFlagSet("oauth", flag.ExitOnError)
 	var c common
@@ -776,7 +776,7 @@ func cmdOAuth(args []string) error {
 	paths := c.paths()
 	tok, err := paths.ReadToken()
 	if err != nil {
-		return errors.New("no token yet; start the daemon first with `wamcp serve`")
+		return errors.New("no token yet; start the daemon first with `whatsupd serve`")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -798,7 +798,7 @@ func cmdOAuth(args []string) error {
 	}
 	if args[0] == "revoke" {
 		if fs.NArg() != 1 {
-			return errors.New("usage: wamcp oauth revoke <client id>")
+			return errors.New("usage: whatsupd oauth revoke <client id>")
 		}
 		id := fs.Arg(0)
 		if store != nil {
@@ -832,7 +832,7 @@ func cmdOAuth(args []string) error {
 
 func cmdService(args []string) error {
 	if len(args) == 0 {
-		return errors.New("usage: wamcp service install|uninstall|restart|status [serve flags]")
+		return errors.New("usage: whatsupd service install|uninstall|restart|status [serve flags]")
 	}
 	switch args[0] {
 	case "install":
@@ -842,8 +842,8 @@ func cmdService(args []string) error {
 		autoMedia := fs.Bool("auto-media", false, "download media of new messages automatically")
 		var send sendFlags
 		send.register(fs)
-		publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"), "host names of a reverse proxy or tunnel in front of wamcp")
-		useOAuth := fs.Bool("oauth", envBool("WAMCP_OAUTH"), "let MCP clients connect with OAuth")
+		publicHost := fs.String("public-host", config.Env("PUBLIC_HOST"), "host names of a reverse proxy or tunnel in front of whatsupd")
+		useOAuth := fs.Bool("oauth", envBool("OAUTH"), "let MCP clients connect with OAuth")
 		_ = fs.Parse(args[1:])
 		if _, err := send.outbox(!isLoopback(c.listen) || strings.TrimSpace(*publicHost) != "", nil, nil, nil); err != nil {
 			return err
@@ -862,6 +862,11 @@ func cmdService(args []string) error {
 		if err := paths.Ensure(); err != nil {
 			return err
 		}
+		if old, err := service.RemoveLegacy(); err != nil {
+			return fmt.Errorf("removing the old %s service: %w", config.LegacyName, err)
+		} else if old != "" {
+			fmt.Printf("Stopped and removed the old %s service (%s).\n", config.LegacyName, old)
+		}
 		service.Stop()
 		var unlock func()
 		for range 15 { // the old daemon needs a few seconds to shut down cleanly
@@ -872,13 +877,13 @@ func cmdService(args []string) error {
 		}
 		if errors.Is(err, config.ErrLocked) {
 			pid, _ := os.ReadFile(paths.LockFile())
-			return fmt.Errorf("another wamcp daemon is running (pid %s); stop it first", strings.TrimSpace(string(pid)))
+			return fmt.Errorf("another whatsupd daemon is running (pid %s); stop it first", strings.TrimSpace(string(pid)))
 		}
 		if err != nil {
 			return err
 		}
 		unlock()
-		logFile := filepath.Join(paths.Logs(), "wamcp.log")
+		logFile := filepath.Join(paths.Logs(), "whatsupd.log")
 		serveArgs := []string{exe, "serve", "--service", "--data-dir", c.dataDir, "--listen", c.listen, "--log-file", logFile}
 		if *autoMedia {
 			serveArgs = append(serveArgs, "--auto-media")
@@ -898,7 +903,7 @@ func cmdService(args []string) error {
 		if note := service.Notes(); note != "" {
 			fmt.Println(note)
 		}
-		fmt.Println("Next: wamcp open")
+		fmt.Println("Next: whatsupd open")
 		return nil
 	case "uninstall":
 		if err := service.Uninstall(); err != nil {
@@ -942,7 +947,7 @@ func cmdBug(args []string) error {
 	fs := flag.NewFlagSet("bug", flag.ExitOnError)
 	_ = fs.Parse(args)
 	info := about.New(version, "")
-	fmt.Printf("wamcp %s, %s, %s\nThe report is public: leave out phone numbers, names and message text.\n", info.Version, info.Platform, info.Go)
+	fmt.Printf("whatsupd %s, %s, %s\nThe report is public: leave out phone numbers, names and message text.\n", info.Version, info.Platform, info.Go)
 	opener := "xdg-open"
 	if runtime.GOOS == "darwin" {
 		opener = "open"
@@ -975,6 +980,6 @@ func cmdLogout(args []string) error {
 	if err := wa.LogoutOffline(ctx, c.dataDir, log); err != nil {
 		return err
 	}
-	fmt.Println("Unlinked. The archive is kept; run `wamcp serve` to link again.")
+	fmt.Println("Unlinked. The archive is kept; run `whatsupd serve` to link again.")
 	return nil
 }

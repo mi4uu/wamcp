@@ -94,7 +94,7 @@ func (h *Handler) resourceMetadata(w http.ResponseWriter, r *http.Request) {
 		"authorization_servers":    []string{base},
 		"bearer_methods_supported": []string{"header"},
 		"scopes_supported":         []string{"mcp"},
-		"resource_name":            "wamcp",
+		"resource_name":            "whatsupd",
 	})
 }
 
@@ -140,7 +140,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 
 var consentPage = template.Must(template.New("consent").Parse(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Connect to wamcp</title>
+<title>Connect to whatsupd</title>
 <style>
 :root{color-scheme:light dark;--bg:#f6f7f9;--fg:#15171a;--muted:#5b6270;--card:#fff;--line:#d9dde3;--accent:#1f7a4d;--err:#b3261e}
 @media (prefers-color-scheme:dark){:root{--bg:#111315;--fg:#e8eaed;--muted:#9aa1ab;--card:#1b1e21;--line:#2c3136;--accent:#3fb37a;--err:#f2b8b5}}
@@ -153,7 +153,7 @@ button.allow{background:var(--accent);border-color:var(--accent);color:#fff}.err
 </style></head><body><main>
 <h1>Allow {{.Client}} to use your WhatsApp archive?</h1>
 <p>It will connect to <b>{{.Redirect}}</b> and can {{.Access}}.</p>
-<p>Enter your wamcp access token to confirm. Get it on the machine running wamcp with <code>wamcp token</code>.</p>
+<p>Enter your whatsupd access token to confirm. Get it on the machine running whatsupd with <code>whatsupd token</code>.</p>
 {{if .Error}}<p class="err">{{.Error}}</p>{{end}}
 <form method="post" action="/oauth/authorize">
 {{range $k, $v := .Params}}<input type="hidden" name="{{$k}}" value="{{$v}}">{{end}}
@@ -221,7 +221,7 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) {
 		given := strings.TrimSpace(r.Form.Get("owner_token"))
 		if subtle.ConstantTimeCompare([]byte(given), []byte(h.OwnerToken)) != 1 {
 			h.fail()
-			page["Error"] = "That is not the access token. Copy it from `wamcp token`."
+			page["Error"] = "That is not the access token. Copy it from `whatsupd token`."
 			w.WriteHeader(http.StatusUnauthorized)
 			h.renderConsent(w, page)
 			return
