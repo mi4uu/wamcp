@@ -705,10 +705,8 @@ func cmdService(args []string) error {
 		send.register(fs)
 		publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"), "host names of a reverse proxy or tunnel in front of wamcp")
 		_ = fs.Parse(args[1:])
-		if send.allow {
-			if _, err := outbox.New(nil, outbox.Config{Allow: strings.Split(send.to, ",")}, nil, nil, nil); err != nil {
-				return fmt.Errorf("--mcp-send-to: %w", err)
-			}
+		if _, err := send.outbox(!isLoopback(c.listen) || strings.TrimSpace(*publicHost) != "", nil, nil, nil); err != nil {
+			return err
 		}
 		exe, err := os.Executable()
 		if err != nil {

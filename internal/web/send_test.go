@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/mi4uu/wamcp/internal/outbox"
@@ -51,7 +52,7 @@ func TestLiveSendWithSwitch(t *testing.T) {
 	if rec.Code != http.StatusOK || json.Unmarshal(rec.Body.Bytes(), &res) != nil || res.MessageID != "ID1" {
 		t.Fatalf("send: %d %s", rec.Code, rec.Body)
 	}
-	if len(snd.reqs) != 1 || snd.reqs[0].IdempotencyKey != "k" {
+	if len(snd.reqs) != 1 || snd.reqs[0].IdempotencyKey != "k" || !strings.HasPrefix(snd.reqs[0].Client, "stdio via daemon API") {
 		t.Fatalf("request not passed through: %+v", snd.reqs)
 	}
 	if rec := do(srv, "POST", "/api/live/send", `{"Chat":"blocked@s.whatsapp.net","Text":"hi"}`, auth); rec.Code != http.StatusConflict {

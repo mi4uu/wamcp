@@ -242,6 +242,17 @@ func TestRateLimit(t *testing.T) {
 	}
 }
 
+func TestDisconnectedIsAudited(t *testing.T) {
+	o, wa, store := setup(t, Config{})
+	o.newID = func() string { return "" }
+	if _, err := o.SendText(context.Background(), Request{Chat: demo.Anna.String(), Text: "hi"}); err == nil {
+		t.Fatal("want an error while disconnected")
+	}
+	if recs := audit(t, store); len(recs) != 1 || recs[0].Status != archive.SendFailed || wa.count() != 0 {
+		t.Fatalf("disconnected attempt not audited as failed: %+v", recs)
+	}
+}
+
 func TestRejectsEmptyAndLongText(t *testing.T) {
 	o, wa, _ := setup(t, Config{})
 	ctx := context.Background()

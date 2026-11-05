@@ -263,7 +263,12 @@ func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
 		audit.MessageID = o.newID()
 	}
 	if audit.MessageID == "" {
-		return Result{}, errors.New("WhatsApp is not connected; nothing was sent")
+		cause := errors.New("WhatsApp is not connected; nothing was sent")
+		audit.Status, audit.Error = archive.SendFailed, cause.Error()
+		if _, err := o.arc.AddAgentSend(ctx, audit); err != nil {
+			return Result{}, errors.Join(cause, err)
+		}
+		return Result{}, cause
 	}
 	pk, err := o.arc.AddAgentSend(ctx, audit)
 	if err != nil {

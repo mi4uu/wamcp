@@ -472,6 +472,7 @@ func (s *server) apiLiveSend(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	in.Client = strings.TrimSpace("stdio via daemon API, reports " + strconv.Quote(in.Client))
 	res, err := s.opt.AgentSend.SendText(r.Context(), in)
 	switch {
 	case errors.Is(err, outbox.ErrNotAllowed), errors.Is(err, outbox.ErrRateLimited),
