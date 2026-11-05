@@ -65,7 +65,7 @@ Where whatsupd is ahead:
 Where others are ahead, today:
 
 - **Breadth.** delltrak has 169 tools, including group admin, business features, scheduling, polls and albums, and the official WhatsApp Cloud API. whatsupd has 15: it reads everything and, when you switch it on, sends text, files and voice notes.
-- **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything. whatsupd needs Go 1.26 to build until release binaries exist.
+- **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything.
 
 ## Table of contents
 
@@ -99,6 +99,38 @@ Open the printed link (or run `whatsupd open`). On your phone go to **WhatsApp >
 After linking, the phone uploads your history in batches. Keep WhatsApp open on the phone for a few minutes. Progress shows in the web client settings, in `whatsupd status` and in the `whatsapp_status` MCP tool.
 
 ## Install
+
+Every [release](https://github.com/mi4uu/whatsupd/releases) has static binaries for macOS and Linux (arm64 and amd64), Linux packages, and `SHA256SUMS`. No Go needed.
+
+### Linux packages
+
+The packages put the binary in `/usr/bin` and a systemd user unit in place. Replace the version with the latest release:
+
+```sh
+V=0.2.0
+# Debian, Ubuntu
+curl -fLO https://github.com/mi4uu/whatsupd/releases/download/v$V/whatsupd_${V}_amd64.deb && sudo dpkg -i whatsupd_${V}_amd64.deb
+# Fedora, RHEL
+sudo rpm -i https://github.com/mi4uu/whatsupd/releases/download/v$V/whatsupd-$V-1.x86_64.rpm
+# Arch
+curl -fLO https://github.com/mi4uu/whatsupd/releases/download/v$V/whatsupd-$V-1-x86_64.pkg.tar.zst && sudo pacman -U whatsupd-$V-1-x86_64.pkg.tar.zst
+```
+
+On arm64 use `arm64.deb`, `aarch64.rpm` or `aarch64.pkg.tar.zst`. Then, as your own user: `whatsupd serve` once to link WhatsApp, and `systemctl --user enable --now whatsupd` (or `whatsupd service install`) to keep it running.
+
+### macOS and other Linux
+
+```sh
+V=v0.2.0
+P=whatsupd_${V}_darwin_arm64      # or darwin_amd64, linux_amd64, linux_arm64
+curl -fLO https://github.com/mi4uu/whatsupd/releases/download/$V/$P.tar.gz
+curl -fLO https://github.com/mi4uu/whatsupd/releases/download/$V/SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+tar -xzf $P.tar.gz
+install -d ~/.local/bin && install -m 0755 $P/whatsupd ~/.local/bin/whatsupd
+```
+
+The macOS binaries are not signed. Downloaded with `curl` they run as they are; a copy downloaded in a browser needs `xattr -d com.apple.quarantine whatsupd` first.
 
 ### From source
 
