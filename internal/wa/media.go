@@ -194,6 +194,16 @@ func (m *Manager) deliverMediaRetry(evt *events.MediaRetry) {
 
 var unsafeChars = regexp.MustCompile(`[^A-Za-z0-9._-]+`)
 
+// safeName makes one path component from text that came over the network:
+// no separators, and never empty, "." or "..".
+func safeName(s string) string {
+	s = unsafeChars.ReplaceAllString(s, "_")
+	if strings.Trim(s, ".") == "" {
+		return "_" + s
+	}
+	return s
+}
+
 var extByMime = map[string]string{
 	"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp", "image/gif": ".gif",
 	"video/mp4": ".mp4", "video/3gpp": ".3gp", "audio/ogg": ".ogg", "audio/mpeg": ".mp3",
@@ -201,9 +211,9 @@ var extByMime = map[string]string{
 }
 
 func (m *Manager) mediaPath(msg *archive.Message) string {
-	chatDir := unsafeChars.ReplaceAllString(strings.Split(msg.ChatJID, "@")[0], "_")
+	chatDir := safeName(strings.Split(msg.ChatJID, "@")[0])
 	month := time.Unix(msg.Timestamp, 0).Format("2006-01")
-	name := unsafeChars.ReplaceAllString(msg.ID, "_")
+	name := safeName(msg.ID)
 	if msg.FileName != "" {
 		name += "_" + unsafeChars.ReplaceAllString(msg.FileName, "_")
 	} else {
