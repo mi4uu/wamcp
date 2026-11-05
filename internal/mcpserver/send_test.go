@@ -133,8 +133,8 @@ func TestSendMessageWithSwitch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(recs) != 2 || recs[0].Status != archive.SendRefused || recs[1].Status != archive.SendSent ||
-		recs[1].Client != "test-client 9" {
+	if len(recs) != 3 || recs[0].Status != archive.SendRefused || recs[1].Status != archive.SendDuplicate ||
+		recs[2].Status != archive.SendSent || recs[2].Client != "test-client 9" {
 		t.Fatalf("audit log: %+v", recs)
 	}
 }

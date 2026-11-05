@@ -41,8 +41,9 @@ type Config struct {
 const (
 	DefaultPerHour     = 20
 	DefaultRetryWindow = 10 * time.Minute
-	keyLookback        = 24 * time.Hour
+	KeyLookback        = 24 * time.Hour
 	MaxTextLen         = 4096
+	maxNotesPerHour    = 200
 )
 
 // SendFunc delivers a text message with a caller-chosen message ID and
@@ -189,28 +190,50 @@ func dedupeKey(req Request) string {
 func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
 	req.Text = strings.TrimSpace(req.Text)
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
-	if req.Chat == "" {
-		return Result{}, errors.New("chat is required")
-	}
-	if req.Text == "" {
-		return Result{}, errors.New("text is required")
-	}
-	if n := len([]rune(req.Text)); n > MaxTextLen {
-		return Result{}, fmt.Errorf("text is %d characters; the limit is %d", n, MaxTextLen)
-	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
 
+	now := o.now()
+	audit := archive.AgentSend{CreatedAt: now, ChatJID: req.Chat, Text: req.Text, ReplyTo: req.ReplyTo, Client: req.Client}
+	// note records a call that sent nothing. Past maxNotesPerHour such calls
+	// are only logged, so a looping agent cannot grow the archive without end.
+	note := func(status string, cause error) error {
+		audit.Status = status
+		if cause != nil {
+			audit.Error = cause.Error()
+		}
+		n, err := o.arc.CountAgentSends(ctx, now.Add(-time.Hour), archive.SendRefused, archive.SendDuplicate)
+		if err == nil && n < maxNotesPerHour {
+			_, err = o.arc.AddAgentSend(ctx, audit)
+		}
+		if err != nil {
+			o.log.Error("mcp send: audit write failed", "err", err)
+		}
+		return cause
+	}
+	refuse := func(cause error) (Result, error) {
+		o.log.Warn("mcp send refused", "chat", req.Chat, "reason", cause, "client", req.Client)
+		return Result{}, note(archive.SendRefused, cause)
+	}
+
+	switch n := len([]rune(req.Text)); {
+	case req.Chat == "":
+		return refuse(errors.New("chat is required"))
+	case n == 0:
+		return refuse(errors.New("text is required"))
+	case n > MaxTextLen:
+		return refuse(fmt.Errorf("text is %d characters; the limit is %d", n, MaxTextLen))
+	}
 	dir, err := o.arc.Directory(ctx)
 	if err != nil {
 		return Result{}, err
 	}
 	req.Chat = dir.Canonical(req.Chat)
-	now := o.now()
 	key := dedupeKey(req)
+	audit.ChatJID, audit.DedupeKey = req.Chat, key
 	lookback := o.window
 	if req.IdempotencyKey != "" {
-		lookback = keyLookback
+		lookback = KeyLookback
 	}
 
 	retryID := ""
@@ -219,38 +242,34 @@ func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
 	case errors.Is(err, archive.ErrNotFound):
 	case err != nil:
 		return Result{}, err
-	case prev.ChatJID != req.Chat || prev.Text != req.Text || prev.ReplyTo != req.ReplyTo:
-		return Result{}, ErrKeyReused
+	case dir.Canonical(prev.ChatJID) != req.Chat || prev.Text != req.Text || prev.ReplyTo != req.ReplyTo:
+		return refuse(ErrKeyReused)
 	case prev.Status == archive.SendSent:
 		o.log.Info("mcp send: duplicate request, not sent again", "chat", req.Chat, "id", prev.MessageID, "client", req.Client)
+		audit.MessageID = prev.MessageID
+		_ = note(archive.SendDuplicate, nil)
 		return Result{Chat: req.Chat, MessageID: prev.MessageID, SentAt: prev.UpdatedAt, Duplicate: true}, nil
 	case prev.Status == archive.SendPending:
 		// The process stopped between writing the audit record and learning
 		// the outcome. The message is archived if WhatsApp accepted it.
 		if _, err := o.arc.Message(ctx, prev.ChatJID, prev.MessageID); err == nil {
 			_ = o.arc.SetAgentSendStatus(ctx, prev.PK, archive.SendSent, prev.MessageID, "", now)
+			audit.MessageID = prev.MessageID
+			_ = note(archive.SendDuplicate, nil)
 			return Result{Chat: req.Chat, MessageID: prev.MessageID, SentAt: prev.CreatedAt, Duplicate: true}, nil
 		}
-		return Result{}, fmt.Errorf("%w (message id %s, started %s): check the chat with get_messages; if it is not there, send again with a new idempotency_key",
-			ErrUnknownOutcome, prev.MessageID, prev.CreatedAt.Format(time.RFC3339))
+		return refuse(fmt.Errorf("%w (message id %s, started %s): check the chat with get_messages; if it is not there, send again with a new idempotency_key",
+			ErrUnknownOutcome, prev.MessageID, prev.CreatedAt.Format(time.RFC3339)))
 	case prev.Status == archive.SendFailed:
 		// Reuse the ID so a failure that did reach WhatsApp is not delivered twice.
 		retryID = prev.MessageID
 	}
 
-	audit := archive.AgentSend{CreatedAt: now, DedupeKey: key, ChatJID: req.Chat, Text: req.Text, ReplyTo: req.ReplyTo, Client: req.Client}
-	refuse := func(cause error) (Result, error) {
-		audit.Status, audit.Error = archive.SendRefused, cause.Error()
-		if _, err := o.arc.AddAgentSend(ctx, audit); err != nil {
-			return Result{}, errors.Join(cause, err)
-		}
-		o.log.Warn("mcp send refused", "chat", req.Chat, "reason", cause, "client", req.Client)
-		return Result{}, cause
-	}
 	if !o.allowed(dir, req.Chat) {
 		return refuse(fmt.Errorf("%w: %s (%s)", ErrNotAllowed, dir.Name(req.Chat), req.Chat))
 	}
-	n, err := o.arc.CountAgentSends(ctx, now.Add(-time.Hour))
+	// Failed sends count too: an error does not prove WhatsApp dropped the message.
+	n, err := o.arc.CountAgentSends(ctx, now.Add(-time.Hour), archive.SendPending, archive.SendSent, archive.SendFailed)
 	if err != nil {
 		return Result{}, err
 	}
@@ -258,18 +277,14 @@ func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
 		return refuse(fmt.Errorf("%w: %d messages in the last hour, limit %d", ErrRateLimited, n, o.perHour))
 	}
 
-	audit.Status, audit.MessageID = archive.SendPending, retryID
+	audit.MessageID = retryID
 	if audit.MessageID == "" {
 		audit.MessageID = o.newID()
 	}
 	if audit.MessageID == "" {
-		cause := errors.New("WhatsApp is not connected; nothing was sent")
-		audit.Status, audit.Error = archive.SendFailed, cause.Error()
-		if _, err := o.arc.AddAgentSend(ctx, audit); err != nil {
-			return Result{}, errors.Join(cause, err)
-		}
-		return Result{}, cause
+		return refuse(errors.New("WhatsApp is not connected; nothing was sent"))
 	}
+	audit.Status = archive.SendPending
 	pk, err := o.arc.AddAgentSend(ctx, audit)
 	if err != nil {
 		return Result{}, fmt.Errorf("audit log: %w; nothing was sent", err)

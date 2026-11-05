@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -13,6 +14,8 @@ const (
 	SendSent    = "sent"
 	SendFailed  = "failed"
 	SendRefused = "refused"
+	// SendDuplicate records a repeated request that returned an earlier result.
+	SendDuplicate = "duplicate"
 )
 
 // AgentSend is one audit record of a message an agent asked to send.
@@ -67,24 +70,32 @@ func (s *Store) SetAgentSendStatus(ctx context.Context, pk int64, status, messag
 	return err
 }
 
-// LastAgentSend returns the newest record with dedupeKey created at or after
-// since, ignoring refusals. It returns ErrNotFound when there is none.
+// LastAgentSend returns the newest attempt with dedupeKey created at or after
+// since, ignoring refusals and duplicates. It returns ErrNotFound when there
+// is none.
 func (s *Store) LastAgentSend(ctx context.Context, dedupeKey string, since time.Time) (AgentSend, error) {
 	a, err := scanAgentSend(s.write.QueryRowContext(ctx, `SELECT `+agentSendCols+` FROM agent_sends
-WHERE dedupe_key = ? AND created_at >= ? AND status != ? ORDER BY pk DESC LIMIT 1`,
-		dedupeKey, since.Unix(), SendRefused))
+WHERE dedupe_key = ? AND created_at >= ? AND status NOT IN (?, ?) ORDER BY pk DESC LIMIT 1`,
+		dedupeKey, since.Unix(), SendRefused, SendDuplicate))
 	if errors.Is(err, sql.ErrNoRows) {
 		return AgentSend{}, ErrNotFound
 	}
 	return a, err
 }
 
-// CountAgentSends counts records created at or after since that sent or may
-// have sent a message (pending or sent).
-func (s *Store) CountAgentSends(ctx context.Context, since time.Time) (int, error) {
+// CountAgentSends counts records created at or after since with one of the
+// given statuses.
+func (s *Store) CountAgentSends(ctx context.Context, since time.Time, statuses ...string) (int, error) {
+	if len(statuses) == 0 {
+		return 0, nil
+	}
+	args := []any{since.Unix()}
+	for _, st := range statuses {
+		args = append(args, st)
+	}
 	var n int
-	err := s.write.QueryRowContext(ctx, `SELECT count(*) FROM agent_sends WHERE created_at >= ? AND status IN (?, ?)`,
-		since.Unix(), SendPending, SendSent).Scan(&n)
+	err := s.write.QueryRowContext(ctx, `SELECT count(*) FROM agent_sends WHERE created_at >= ? AND status IN (?`+
+		strings.Repeat(", ?", len(statuses)-1)+`)`, args...).Scan(&n)
 	return n, err
 }
 

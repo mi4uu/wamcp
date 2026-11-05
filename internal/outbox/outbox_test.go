@@ -138,8 +138,8 @@ func TestRetryWithKeyDoesNotDoubleSend(t *testing.T) {
 	if wa.count() != 1 || !second.Duplicate || second.MessageID != first.MessageID {
 		t.Fatalf("retry sent again: sent=%v second=%+v", wa.sent, second)
 	}
-	if n := len(audit(t, store)); n != 1 {
-		t.Fatalf("a duplicate must not add audit records, got %d", n)
+	if recs := audit(t, store); len(recs) != 2 || recs[0].Status != archive.SendDuplicate || recs[1].Status != archive.SendSent {
+		t.Fatalf("want sent then duplicate in the audit, got %+v", recs)
 	}
 	req.Text = "something else"
 	if _, err := o.SendText(ctx, req); !errors.Is(err, ErrKeyReused) {
@@ -248,8 +248,58 @@ func TestDisconnectedIsAudited(t *testing.T) {
 	if _, err := o.SendText(context.Background(), Request{Chat: demo.Anna.String(), Text: "hi"}); err == nil {
 		t.Fatal("want an error while disconnected")
 	}
-	if recs := audit(t, store); len(recs) != 1 || recs[0].Status != archive.SendFailed || wa.count() != 0 {
-		t.Fatalf("disconnected attempt not audited as failed: %+v", recs)
+	if recs := audit(t, store); len(recs) != 1 || recs[0].Status != archive.SendRefused || wa.count() != 0 {
+		t.Fatalf("disconnected attempt not audited: %+v", recs)
+	}
+}
+
+func TestFailedSendsCountTowardsLimit(t *testing.T) {
+	o, wa, _ := setup(t, Config{PerHour: 1})
+	ctx := context.Background()
+	wa.fail = errors.New("ack timeout")
+	if _, err := o.SendText(ctx, Request{Chat: demo.Anna.String(), Text: "maybe delivered"}); err == nil {
+		t.Fatal("want the send error")
+	}
+	wa.fail = nil
+	if _, err := o.SendText(ctx, Request{Chat: demo.Anna.String(), Text: "another"}); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("a failed send must use up the budget: got %v", err)
+	}
+}
+
+func TestEveryCallIsAudited(t *testing.T) {
+	o, _, store := setup(t, Config{})
+	ctx := context.Background()
+	req := Request{Chat: demo.Anna.String(), Text: "once", IdempotencyKey: "k"}
+	if _, err := o.SendText(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := o.SendText(ctx, req); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = o.SendText(ctx, Request{Chat: demo.Anna.String(), Text: " "})
+	_, _ = o.SendText(ctx, Request{Text: "no chat"})
+	recs := audit(t, store)
+	got := []string{}
+	for _, a := range recs {
+		got = append(got, a.Status)
+	}
+	if fmt.Sprint(got) != "[refused refused duplicate sent]" {
+		t.Fatalf("audit statuses (newest first): %v", got)
+	}
+}
+
+func TestRefusalNotesAreCapped(t *testing.T) {
+	o, _, store := setup(t, Config{Allow: []string{"me"}})
+	ctx := context.Background()
+	for i := range maxNotesPerHour + 50 {
+		_, _ = o.SendText(ctx, Request{Chat: demo.Anna.String(), Text: fmt.Sprint("spam ", i)})
+	}
+	recs, err := store.AgentSends(ctx, 1000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(recs) != maxNotesPerHour {
+		t.Fatalf("want %d refusal records, got %d", maxNotesPerHour, len(recs))
 	}
 }
 

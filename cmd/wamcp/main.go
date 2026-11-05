@@ -45,7 +45,7 @@ Usage:
   wamcp mcp       Serve MCP over stdio (reads the archive; for Claude Desktop & co.)
   wamcp open      Open the web client in the browser (signs you in)
   wamcp config    Print MCP client configuration (Claude Code, Claude Desktop)
-  wamcp token     Print the access token
+  wamcp token     Print the access token (--mcp: the MCP-only token, --rotate-mcp: replace it)
   wamcp status    Show daemon, sync and archive status
   wamcp audit     Show messages MCP agents sent or tried to send
   wamcp service   install | uninstall | restart | status — run the daemon in the background (macOS)
@@ -410,6 +410,10 @@ func cmdServe(args []string) (retErr error) {
 	if err != nil {
 		return err
 	}
+	mcpToken, err := paths.LoadOrCreateMCPToken()
+	if err != nil {
+		return err
+	}
 	out, err := openLog(*logFile)
 	if err != nil {
 		return err
@@ -446,7 +450,7 @@ func cmdServe(args []string) (retErr error) {
 		return err
 	}
 	var mcpOpts []mcpserver.Option
-	webOpts := web.Options{Token: token, Archive: arc, Daemon: mgr, Log: log,
+	webOpts := web.Options{Token: token, MCPToken: mcpToken, Archive: arc, Daemon: mgr, Log: log,
 		AllowAnyHost: !isLoopback(c.listen), PublicHosts: publicHosts, TrustLocal: *webAuth == "local" && !exposed}
 	if ob != nil {
 		mcpOpts = append(mcpOpts, mcpserver.WithSender(ob))
@@ -504,7 +508,7 @@ func cmdMCP(args []string) error {
 	defer arc.Close()
 	var live mcpserver.Live
 	var opts []mcpserver.Option
-	if tok, err := c.paths().ReadToken(); err == nil {
+	if tok, err := agentToken(c.paths()); err == nil {
 		rl := &remoteLive{base: c.baseURL(), token: tok, arc: arc, http: &http.Client{Timeout: 90 * time.Second}}
 		live = rl
 		if *allowSend {
@@ -529,16 +533,39 @@ func cmdMCP(args []string) error {
 	return nil
 }
 
+// agentToken returns the MCP-only token, or the full-access token for data
+// directories created before MCP tokens existed.
+func agentToken(p config.Paths) (string, error) {
+	if tok, err := p.ReadMCPToken(); err == nil {
+		return tok, nil
+	}
+	return p.ReadToken()
+}
+
 func cmdToken(args []string) error {
 	fs := flag.NewFlagSet("token", flag.ExitOnError)
 	var c common
 	c.register(fs)
+	mcpOnly := fs.Bool("mcp", false, "print the MCP-only token: opens /mcp, cannot sign in to the web client")
+	rotate := fs.Bool("rotate-mcp", false, "replace the MCP-only token; MCP clients using the old one stop working after a daemon restart")
 	_ = fs.Parse(args)
 	paths := c.paths()
 	if err := paths.Ensure(); err != nil {
 		return err
 	}
-	tok, err := paths.LoadOrCreateToken()
+	var tok string
+	var err error
+	switch {
+	case *rotate:
+		if tok, err = paths.RotateMCPToken(); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "New MCP token. Restart the daemon (`wamcp service restart`) and update your MCP clients.")
+	case *mcpOnly:
+		tok, err = paths.LoadOrCreateMCPToken()
+	default:
+		tok, err = paths.LoadOrCreateToken()
+	}
 	if err != nil {
 		return err
 	}
@@ -555,7 +582,7 @@ func cmdConfig(args []string) error {
 	if err := paths.Ensure(); err != nil {
 		return err
 	}
-	tok, err := paths.LoadOrCreateToken()
+	tok, err := paths.LoadOrCreateMCPToken()
 	if err != nil {
 		return err
 	}
@@ -564,7 +591,8 @@ func cmdConfig(args []string) error {
 		"whatsapp": map[string]any{"command": exe, "args": []string{"mcp", "--data-dir", c.dataDir}},
 	}}, "", "  ")
 	fmt.Printf(`MCP endpoint (daemon must be running): %[1]s/mcp
-Access token: %[2]s
+MCP token: %[2]s
+  (MCP only: it cannot sign in to the web client. Replace it with `+"`wamcp token --rotate-mcp`"+`.)
 
 Claude Code (HTTP, all tools incl. media download):
   claude mcp add --transport http --scope user whatsapp %[1]s/mcp --header "Authorization: Bearer %[2]s"

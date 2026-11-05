@@ -161,7 +161,7 @@ UPDATE chats SET unread_known = 1 WHERE unread_count IS NOT NULL;`,
 	text       TEXT NOT NULL,
 	reply_to   TEXT NOT NULL DEFAULT '',
 	client     TEXT NOT NULL DEFAULT '',
-	status     TEXT NOT NULL, -- pending, sent, failed, refused
+	status     TEXT NOT NULL, -- pending, sent, failed, refused, duplicate
 	message_id TEXT NOT NULL DEFAULT '',
 	error      TEXT NOT NULL DEFAULT ''
 );
