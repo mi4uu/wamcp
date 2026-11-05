@@ -30,6 +30,7 @@ import (
 	"github.com/mi4uu/wamcp/internal/archive"
 	"github.com/mi4uu/wamcp/internal/config"
 	"github.com/mi4uu/wamcp/internal/mcpserver"
+	"github.com/mi4uu/wamcp/internal/oauth"
 	"github.com/mi4uu/wamcp/internal/outbox"
 	"github.com/mi4uu/wamcp/internal/service"
 	"github.com/mi4uu/wamcp/internal/wa"
@@ -48,6 +49,7 @@ Usage:
   wamcp token     Print the access token (--mcp: the MCP-only token, --rotate-mcp: replace it)
   wamcp status    Show daemon, sync and archive status
   wamcp audit     Show messages MCP agents sent or tried to send
+  wamcp oauth     list | revoke <client id>: OAuth clients you approved (--oauth)
   wamcp service   install | uninstall | restart | status — run the daemon in the background (macOS)
   wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
   wamcp version
@@ -79,6 +81,8 @@ func main() {
 		err = cmdStatus(args)
 	case "audit":
 		err = cmdAudit(args)
+	case "oauth":
+		err = cmdOAuth(args)
 	case "service":
 		err = cmdService(args)
 	case "logout":
@@ -377,6 +381,8 @@ func cmdServe(args []string) (retErr error) {
 	deleted := fs.String("deleted", "keep", "messages deleted for everyone: keep (content stays, marked as deleted) or remove (wiped like in WhatsApp)")
 	publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"),
 		"comma-separated host names of a reverse proxy or tunnel in front of wamcp (for example wa.example.com); turns on token sign-in for the web client, env WAMCP_PUBLIC_HOST")
+	useOAuth := fs.Bool("oauth", envBool("WAMCP_OAUTH"),
+		"let MCP clients connect with OAuth (claude.ai connectors and others); you approve each client with the access token, env WAMCP_OAUTH")
 	webAuth := fs.String("web-auth", "local", "web client sign-in: local (browsers on this machine are signed in automatically) or token")
 	asService := fs.Bool("service", false, "running under launchd (stop restarting after repeated startup failures)")
 	_ = fs.Parse(args)
@@ -452,6 +458,19 @@ func cmdServe(args []string) (retErr error) {
 	var mcpOpts []mcpserver.Option
 	webOpts := web.Options{Token: token, MCPToken: mcpToken, Archive: arc, Daemon: mgr, Log: log,
 		AllowAnyHost: !isLoopback(c.listen), PublicHosts: publicHosts, TrustLocal: *webAuth == "local" && !exposed}
+	if *useOAuth {
+		srv, err := oauth.Open(filepath.Join(paths.Dir, "oauth.json"))
+		if err != nil {
+			return err
+		}
+		access := "read your chats, messages, contacts, groups and calls"
+		if ob != nil {
+			access += ", and send text messages (" + ob.Policy() + ")"
+		} else {
+			access += "; it cannot send anything"
+		}
+		webOpts.OAuth = &oauth.Handler{S: srv, OwnerToken: token, Access: access}
+	}
 	if ob != nil {
 		mcpOpts = append(mcpOpts, mcpserver.WithSender(ob))
 		webOpts.AgentSend = ob
@@ -719,6 +738,71 @@ func cmdAudit(args []string) error {
 	return nil
 }
 
+func cmdOAuth(args []string) error {
+	if len(args) == 0 || (args[0] != "list" && args[0] != "revoke") {
+		return errors.New("usage: wamcp oauth list | revoke <client id>")
+	}
+	fs := flag.NewFlagSet("oauth", flag.ExitOnError)
+	var c common
+	c.register(fs)
+	_ = fs.Parse(args[1:])
+	paths := c.paths()
+	tok, err := paths.ReadToken()
+	if err != nil {
+		return errors.New("no token yet; start the daemon first with `wamcp serve`")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	rl := &remoteLive{base: c.baseURL(), token: tok, http: &http.Client{Timeout: 10 * time.Second}}
+	var clients []oauth.Client
+	var store *oauth.Server
+	// The running daemon owns oauth.json; edit the file only when it is stopped.
+	daemonErr := rl.call(ctx, http.MethodGet, "/api/oauth/clients", nil, &clients)
+	if daemonErr != nil {
+		unlock, err := paths.Lock()
+		if err != nil {
+			return fmt.Errorf("the daemon is running but did not answer (%v); is it started with --oauth?", daemonErr)
+		}
+		defer unlock()
+		if store, err = oauth.Open(filepath.Join(paths.Dir, "oauth.json")); err != nil {
+			return err
+		}
+		clients = store.Clients()
+	}
+	if args[0] == "revoke" {
+		if fs.NArg() != 1 {
+			return errors.New("usage: wamcp oauth revoke <client id>")
+		}
+		id := fs.Arg(0)
+		if store != nil {
+			err = store.Revoke(id)
+		} else {
+			err = rl.call(ctx, http.MethodPost, "/api/oauth/revoke", map[string]string{"id": id}, nil)
+		}
+		if err != nil {
+			return fmt.Errorf("revoke %s: %w", id, err)
+		}
+		fmt.Println("Revoked", id, "and every token issued to it.")
+		return nil
+	}
+	if len(clients) == 0 {
+		fmt.Println("No OAuth clients.")
+		return nil
+	}
+	for _, cl := range clients {
+		state := "approved " + cl.ApprovedAt.Format("2006-01-02 15:04")
+		if cl.ApprovedAt.IsZero() {
+			state = "never approved"
+		}
+		used := "never used"
+		if !cl.LastUsedAt.IsZero() {
+			used = "last token " + cl.LastUsedAt.Format("2006-01-02 15:04")
+		}
+		fmt.Printf("%s  %q  %s, %s\n    redirect: %s\n", cl.ID, cl.Name, state, used, strings.Join(cl.RedirectURIs, ", "))
+	}
+	return nil
+}
+
 func cmdService(args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: wamcp service install|uninstall|restart|status [serve flags]")
@@ -732,6 +816,7 @@ func cmdService(args []string) error {
 		var send sendFlags
 		send.register(fs)
 		publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"), "host names of a reverse proxy or tunnel in front of wamcp")
+		useOAuth := fs.Bool("oauth", envBool("WAMCP_OAUTH"), "let MCP clients connect with OAuth")
 		_ = fs.Parse(args[1:])
 		if _, err := send.outbox(!isLoopback(c.listen) || strings.TrimSpace(*publicHost) != "", nil, nil, nil); err != nil {
 			return err
@@ -774,6 +859,9 @@ func cmdService(args []string) error {
 		serveArgs = append(serveArgs, send.args()...)
 		if *publicHost != "" {
 			serveArgs = append(serveArgs, "--public-host", *publicHost)
+		}
+		if *useOAuth {
+			serveArgs = append(serveArgs, "--oauth")
 		}
 		path, err := service.Install(serveArgs, filepath.Join(paths.Logs(), "launchd.log"))
 		if err != nil {

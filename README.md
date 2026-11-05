@@ -42,7 +42,7 @@ WhatsApp MCP servers on GitHub with 40+ stars, as of 2026-11-05. Stars, dates an
 
 | Project | Stars | Last push | Runs as | Your messages live | Sends by default | Auth on HTTP |
 |---|---|---|---|---|---|---|
-| **wamcp** (this repo) | new | active | one Go binary | your disk, full history | **no**, opt-in with allowlist, rate limit, audit | bearer token, always on |
+| **wamcp** (this repo) | new | active | one Go binary | your disk, full history | **no**, opt-in with allowlist, rate limit, audit | bearer token always on; OAuth 2.1 opt-in |
 | [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp) | 6814 | 2025-07-13 | Go bridge + Python | your disk | yes | no MCP HTTP; bridge API on all interfaces, no auth |
 | [finereli/whatsapp-mcp](https://github.com/finereli/whatsapp-mcp) | 404 | 2026-10-24 | Cloudflare Worker | Cloudflare, encrypted | cannot send | OAuth |
 | [verygoodplugins/whatsapp-mcp](https://github.com/verygoodplugins/whatsapp-mcp) | 283 | 2026-10-30 | Go bridge + Python | your disk | yes | none on MCP HTTP |
@@ -59,12 +59,11 @@ Where wamcp is ahead:
 - **Safe by default.** It is the only one in the table that is read-only out of the box and can still send when you ask for it, behind an allowlist, an hourly limit, retry de-duplication and an audit log.
 - **The whole archive, on your disk.** Every message, edit, deletion, group, contact and call, kept for good, with accent-insensitive full-text search. No cloud account, no retention window.
 - **One binary.** No Python, Node, Redis, Docker or Chrome. A web client is built in.
-- **Remote access with auth that cannot be switched off.** Streamable HTTP always needs the bearer token; `--public-host` puts it behind your own tunnel.
+- **Remote access with auth that cannot be switched off.** Streamable HTTP always needs a token: the MCP-only token, or OAuth with PKCE where you approve each client. `--public-host` puts it behind your own tunnel, with nothing hosted by anyone else.
 - **Nothing lost on a crash.** Messages are acknowledged to WhatsApp only after they are on disk.
 
 Where others are ahead, today:
 
-- **OAuth.** finereli, felipeadeildo and delltrak speak OAuth, so any OAuth-only client can connect. wamcp needs a client that can send a bearer header.
 - **Breadth.** delltrak has 169 tools, including group admin, business features, scheduling and the official WhatsApp Cloud API. lharries and delltrak can send files and voice notes; wamcp's MCP side sends text only.
 - **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything. wamcp needs Go 1.26 to build until release binaries exist.
 
@@ -148,9 +147,12 @@ wamcp stays on `127.0.0.1`. Put a tunnel or reverse proxy with HTTPS in front of
 wamcp serve --public-host wa.example.com      # or: wamcp service install --public-host wa.example.com
 ```
 
-Then add a custom connector in claude.ai with the URL `https://wa.example.com/mcp` and a request header `Authorization: Bearer <token>` (from `wamcp token --mcp`, which cannot sign in to the web client; replace it any time with `wamcp token --rotate-mcp`). Anthropic documents request headers for custom connectors; check that your plan shows the field. wamcp does not implement OAuth yet, so clients that only speak OAuth cannot connect.
+Then add a custom connector in claude.ai with the URL `https://wa.example.com/mcp`. Two ways to sign it in:
 
-With `--public-host` the web client always asks for the token, and sending (if you turn it on) requires an allowlist.
+- **OAuth** (works with any OAuth-only client): start the daemon with `--oauth` as well. The client registers itself, your browser opens a wamcp page that names the client and what it may do, and you confirm with the main token (`wamcp token`). Access tokens last an hour and refresh for 30 days. `wamcp oauth list` shows approved clients, `wamcp oauth revoke <id>` cuts one off at once. Ten wrong tokens in a minute lock the consent page for a minute. Use it together with `--public-host`, which makes the issuer `https://`.
+- **Static header**: a request header `Authorization: Bearer <token>` with the token from `wamcp token --mcp`, which cannot sign in to the web client (replace it any time with `wamcp token --rotate-mcp`). Anthropic documents request headers for custom connectors; check that your plan shows the field.
+
+With `--public-host` the web client always asks for the token, linking a phone needs a signed-in browser, and sending (if you turn it on) requires an allowlist.
 
 ## MCP tools
 
@@ -234,6 +236,7 @@ Everything lives in `~/.wamcp` (mode `0700`):
 | `media/`, `avatars/` | Downloaded attachments and profile pictures |
 | `token` | Main access token: web client sign-in, MCP |
 | `mcp-token` | MCP-only token: `/mcp` and the API stdio servers use, no web client |
+| `oauth.json` | OAuth clients you approved and hashes of their tokens (`--oauth`) |
 
 - The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>` (the MCP token or the main one), there is no way to turn that off. The web client needs a session cookie obtained with the token (`wamcp open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
 - Behind a reverse proxy or tunnel (cloudflared, nginx, Caddy) use `--public-host` or `--web-auth token`. Without them, requests that carry proxy headers (`X-Forwarded-For`, `Forwarded`, `Cf-Connecting-Ip` and similar) or come from a known proxy process (cloudflared, ngrok, ssh, nginx, Caddy and others) are never signed in automatically, but a proxy that is neither would look like a local browser.
@@ -258,6 +261,7 @@ wamcp config    Print MCP client configuration
 wamcp token     Print the access token (--mcp: MCP-only token, --rotate-mcp: replace it)
 wamcp status    Show daemon, sync and archive status
 wamcp audit     Show messages MCP agents sent or tried to send
+wamcp oauth     list | revoke <client id>: OAuth clients you approved (serve --oauth)
 wamcp service   install | uninstall | restart | status (macOS)
 wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
 wamcp version
