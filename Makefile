@@ -24,17 +24,23 @@ demo:
 
 PLATFORMS ?= darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
-# Release archives in dist/: one static binary per platform, plus SHA256SUMS.
+DIST := $(CURDIR)/dist/$(VERSION)
+
+# Release archives in dist/<version>/: one static binary per platform, plus
+# SHA256SUMS. Refuses to reuse a directory, so old archives never get mixed in.
 dist:
-	mkdir -p dist
+	@printf '%s' '$(VERSION)' | grep -Eq '^v?[0-9A-Za-z][0-9A-Za-z.+-]*$$' || \
+		{ echo "VERSION must look like v1.2.3, got '$(VERSION)'" >&2; exit 1; }
+	@if [ -e '$(DIST)' ]; then echo "$(DIST) already exists; remove it or use another VERSION" >&2; exit 1; fi
+	mkdir -p '$(DIST)'
 	set -e; for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; name=wamcp_$(VERSION)_$${os}_$${arch}; \
-		mkdir -p dist/$$name; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o dist/$$name/wamcp ./cmd/wamcp; \
-		cp LICENSE README.md dist/$$name/; \
-		tar -C dist -czf dist/$$name.tar.gz $$name; \
+		mkdir -p "$(DIST)/$$name"; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST)/$$name/wamcp" ./cmd/wamcp; \
+		cp LICENSE README.md "$(DIST)/$$name/"; \
+		tar -czf "$(DIST)/$$name.tar.gz" -C "$(DIST)" "$$name"; \
 	done
-	cd dist && shasum -a 256 wamcp_$(VERSION)_*.tar.gz > SHA256SUMS
+	cd '$(DIST)' && shasum -a 256 *.tar.gz > SHA256SUMS
 
 clean:
 	rm -rf bin
