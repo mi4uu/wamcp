@@ -25,6 +25,6 @@ jobs:
       - run: go vet ./...
       - run: go test -race ./...
       - run: make dist VERSION="$VERSION"
-      - run: gh release create "$VERSION" --verify-tag --generate-notes "dist/$VERSION"/*.tar.gz "dist/$VERSION/SHA256SUMS"
+      - run: gh release create "$VERSION" --verify-tag --generate-notes "dist/$VERSION"/*.tar.gz "dist/$VERSION"/*.deb "dist/$VERSION"/*.rpm "dist/$VERSION"/*.pkg.tar.zst "dist/$VERSION/SHA256SUMS"
         env:
           GH_TOKEN: ${{ github.token }}
