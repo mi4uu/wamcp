@@ -28,7 +28,7 @@
 | **An MCP server** | 13 tools for Claude Code, Claude Desktop and any MCP client: "what did I miss", search across all chats, people, groups, calls. Read-only by default; sending is a separate opt-in with an allowlist, a rate limit and an audit log. |
 | **Your own notes on people** | Alias, description, priority 1 to 5, tags and custom fields on any contact or chat. Agents can filter by them. |
 | **Nothing lost on restart** | Messages are acked to WhatsApp only after they are written to disk. Offline gaps are recovered and counted. |
-| **One static binary** | Pure Go, no cgo, no Docker, no database server. A macOS LaunchAgent in one command. |
+| **One static binary** | Pure Go, no cgo, no Docker, no database server. A background service in one command: LaunchAgent on macOS, systemd on Linux. |
 
 ## Why wamcp
 
@@ -108,11 +108,11 @@ go install github.com/mi4uu/wamcp/cmd/wamcp@latest
 
 or clone and `make install` as above (installs to `~/.local/bin`, set `PREFIX` to change it).
 
-macOS and Linux both work. The background service (`wamcp service`) is macOS only for now. On Linux, run `wamcp serve` under systemd.
+macOS and Linux both work.
 
 ## Run it in the background
 
-macOS LaunchAgent: starts at login, restarts after crashes.
+A LaunchAgent on macOS, a systemd user unit on Linux. It starts at login and restarts after crashes.
 
 ```sh
 wamcp service install     # add --auto-media to download media of new messages
@@ -121,6 +121,8 @@ wamcp service uninstall   # the archive is kept
 ```
 
 Logs: `~/.wamcp/logs/wamcp.log`.
+
+On Linux the unit goes to `~/.config/systemd/user/wamcp.service`. systemd stops user services when you log out, so on a server you reach over SSH run `loginctl enable-linger` once; `wamcp service install` tells you when it is needed. Without systemd (some containers, WSL), run `wamcp serve` under your own supervisor.
 
 ## Connect an AI assistant
 
@@ -262,7 +264,7 @@ wamcp token     Print the access token (--mcp: MCP-only token, --rotate-mcp: rep
 wamcp status    Show daemon, sync and archive status
 wamcp audit     Show messages MCP agents sent or tried to send
 wamcp oauth     list | revoke <client id>: OAuth clients you approved (serve --oauth)
-wamcp service   install | uninstall | restart | status (macOS)
+wamcp service   install | uninstall | restart | status (macOS and Linux)
 wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
 wamcp version
 ```
@@ -284,7 +286,7 @@ make build
 | `internal/wa` | Connection, pairing, catch-up, media, sending |
 | `internal/mcpserver` | MCP tools |
 | `internal/web` | HTTP API and the embedded web client |
-| `internal/service` | launchd integration |
+| `internal/service` | launchd and systemd integration |
 | `cmd/wamcp` | The CLI |
 
 ## License

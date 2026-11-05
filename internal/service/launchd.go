@@ -1,16 +1,12 @@
-// Package service installs wamcp as a macOS LaunchAgent so the daemon runs in
-// the background, starts at login and restarts after crashes.
 package service
 
 import (
 	"bytes"
 	"encoding/xml"
-	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -66,11 +62,7 @@ func launchctl(args ...string) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// Install writes the LaunchAgent and (re)starts it.
-func Install(args []string, logFile string) (string, error) {
-	if runtime.GOOS != "darwin" {
-		return "", errors.New("service install is only implemented for macOS; use systemd or another supervisor to run `wamcp serve`")
-	}
+func launchdInstall(args []string, logFile string) (string, error) {
 	path, err := PlistPath()
 	if err != nil {
 		return "", err
@@ -91,21 +83,18 @@ func Install(args []string, logFile string) (string, error) {
 	return path, nil
 }
 
-// Stop unloads the LaunchAgent without removing its definition.
-func Stop() {
+func launchdStop() {
 	_, _ = launchctl("bootout", domain()+"/"+Label)
 }
 
-// Restart restarts a loaded LaunchAgent (e.g. after installing a new binary).
-func Restart() error {
+func launchdRestart() error {
 	if out, err := launchctl("kickstart", "-k", domain()+"/"+Label); err != nil {
 		return fmt.Errorf("launchctl kickstart: %v: %s", err, out)
 	}
 	return nil
 }
 
-// Uninstall stops the LaunchAgent and removes its definition.
-func Uninstall() error {
+func launchdUninstall() error {
 	path, err := PlistPath()
 	if err != nil {
 		return err
@@ -117,11 +106,7 @@ func Uninstall() error {
 	return nil
 }
 
-// Status reports whether the LaunchAgent is loaded and running.
-func Status() string {
-	if runtime.GOOS != "darwin" {
-		return "not supported on " + runtime.GOOS
-	}
+func launchdStatus() string {
 	out, err := launchctl("print", domain()+"/"+Label)
 	if err != nil {
 		return "not installed"
