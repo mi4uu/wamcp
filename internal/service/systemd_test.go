@@ -55,6 +55,20 @@ func TestUnit(t *testing.T) {
 	}
 }
 
+func TestPackagedUnitMatches(t *testing.T) {
+	want, err := Unit([]string{"/usr/bin/wamcp", "serve", "--service"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl, err := os.ReadFile(filepath.Join("..", "..", "packaging", "systemd.service"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.ReplaceAll(string(tmpl), "@NAME@", "wamcp"); got != want {
+		t.Errorf("packaging/systemd.service differs from Unit():\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestUnitPath(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", "/cfg")
 	if p, _ := UnitPath(); p != "/cfg/systemd/user/wamcp.service" {
