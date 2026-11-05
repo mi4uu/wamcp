@@ -35,6 +35,7 @@ const (
 	// unusedClientTTL is how long a registered client that never got a
 	// token is kept.
 	unusedClientTTL = 24 * time.Hour
+	consentGrace    = 15 * time.Minute
 )
 
 // Client is a registered OAuth client.
@@ -46,6 +47,8 @@ type Client struct {
 	// ApprovedAt is set once the owner allowed the client.
 	ApprovedAt time.Time `json:"approved_at,omitzero"`
 	LastUsedAt time.Time `json:"last_used_at,omitzero"`
+	// ConsentAt is when the consent page was last opened for this client.
+	ConsentAt time.Time `json:"consent_at,omitzero"`
 }
 
 type grant struct {
@@ -136,10 +139,15 @@ func (s *Server) prune() {
 }
 
 // evictUnapproved drops the oldest client the owner never approved, so
-// anonymous registrations cannot lock out a real client. Callers hold mu.
+// anonymous registrations cannot fill the list for good. A client whose
+// consent page is open is kept, so a flood cannot evict it mid-approval.
+// Callers hold mu.
 func (s *Server) evictUnapproved() bool {
 	var oldest *Client
 	for _, c := range s.st.Clients {
+		if s.now().Sub(c.ConsentAt) < consentGrace {
+			continue
+		}
 		if c.ApprovedAt.IsZero() && (oldest == nil || c.CreatedAt.Before(oldest.CreatedAt)) {
 			oldest = c
 		}
@@ -220,6 +228,7 @@ func (s *Server) CheckAuthorize(q url.Values) (*AuthRequest, error) {
 	c := s.st.Clients[q.Get("client_id")]
 	var cp Client
 	if c != nil {
+		c.ConsentAt = s.now()
 		cp = *c
 	}
 	s.mu.Unlock()

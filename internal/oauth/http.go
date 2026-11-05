@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -20,6 +21,36 @@ type Handler struct {
 	Base func(*http.Request) string
 	// Access describes what an approved client can do, for the consent page.
 	Access string
+
+	failMu   sync.Mutex
+	failures []time.Time
+}
+
+const (
+	maxFailures   = 10
+	failureWindow = time.Minute
+)
+
+// locked reports whether too many wrong owner tokens were entered lately,
+// across all visitors.
+func (h *Handler) locked() bool {
+	h.failMu.Lock()
+	defer h.failMu.Unlock()
+	cut := time.Now().Add(-failureWindow)
+	kept := h.failures[:0]
+	for _, t := range h.failures {
+		if t.After(cut) {
+			kept = append(kept, t)
+		}
+	}
+	h.failures = kept
+	return len(h.failures) >= maxFailures
+}
+
+func (h *Handler) fail() {
+	h.failMu.Lock()
+	h.failures = append(h.failures, time.Now())
+	h.failMu.Unlock()
 }
 
 // Register adds the OAuth routes to mux.
@@ -167,6 +198,9 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	iss := h.Base(r)
+	if err == nil && !h.ownResource(r, q.Get("resource")) {
+		err = errors.New("invalid_target: resource must be " + iss + "/mcp")
+	}
 	if err != nil {
 		name, desc, _ := strings.Cut(err.Error(), ": ")
 		redirectWith(w, r, req.RedirectURI, url.Values{"error": {name}, "error_description": {desc}, "state": {req.State}, "iss": {iss}})
@@ -178,9 +212,15 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) {
 			redirectWith(w, r, req.RedirectURI, url.Values{"error": {"access_denied"}, "state": {req.State}, "iss": {iss}})
 			return
 		}
+		if h.locked() {
+			page["Error"] = "Too many wrong tokens in the last minute. Wait a minute and try again."
+			w.WriteHeader(http.StatusTooManyRequests)
+			h.renderConsent(w, page)
+			return
+		}
 		given := strings.TrimSpace(r.Form.Get("owner_token"))
 		if subtle.ConstantTimeCompare([]byte(given), []byte(h.OwnerToken)) != 1 {
-			time.Sleep(time.Second)
+			h.fail()
 			page["Error"] = "That is not the access token. Copy it from `wamcp token`."
 			w.WriteHeader(http.StatusUnauthorized)
 			h.renderConsent(w, page)
@@ -195,6 +235,12 @@ func (h *Handler) authorize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderConsent(w, page)
+}
+
+// ownResource accepts an absent resource indicator (RFC 8707) or this
+// server's MCP endpoint, the only resource its tokens open.
+func (h *Handler) ownResource(r *http.Request, resource string) bool {
+	return resource == "" || strings.TrimSuffix(resource, "/") == h.Base(r)+"/mcp"
 }
 
 func (h *Handler) renderConsent(w http.ResponseWriter, page map[string]any) {
@@ -232,6 +278,10 @@ func (h *Handler) token(w http.ResponseWriter, r *http.Request) {
 		err error
 	)
 	clientID := r.PostForm.Get("client_id")
+	if !h.ownResource(r, r.PostForm.Get("resource")) {
+		oauthError(w, http.StatusBadRequest, errors.New("invalid_target: resource must be "+h.Base(r)+"/mcp"))
+		return
+	}
 	switch r.PostForm.Get("grant_type") {
 	case "authorization_code":
 		t, err = h.S.ExchangeCode(clientID, r.PostForm.Get("code"), r.PostForm.Get("redirect_uri"), r.PostForm.Get("code_verifier"))

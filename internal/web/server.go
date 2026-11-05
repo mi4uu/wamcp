@@ -307,14 +307,15 @@ func (s *server) localOnly(next http.Handler) http.Handler {
 func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 
 // baseURL is the origin clients see: https for a --public-host (TLS ends at
-// the proxy), otherwise what the request came in on.
+// the proxy), otherwise plain http as the request came in. Forwarding
+// headers are not trusted: anyone reaching a non-loopback listener can set them.
 func (s *server) baseURL(r *http.Request) string {
 	host := strings.ToLower(r.Host)
 	name := host
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		name = h
 	}
-	if slices.Contains(s.opt.PublicHosts, name) || (s.opt.AllowAnyHost && r.Header.Get("X-Forwarded-Proto") == "https") {
+	if slices.Contains(s.opt.PublicHosts, name) {
 		return "https://" + host
 	}
 	return "http://" + host

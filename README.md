@@ -149,7 +149,7 @@ wamcp serve --public-host wa.example.com      # or: wamcp service install --publ
 
 Then add a custom connector in claude.ai with the URL `https://wa.example.com/mcp`. Two ways to sign it in:
 
-- **OAuth** (works with any OAuth-only client): start the daemon with `--oauth` as well. The client registers itself, your browser opens a wamcp page that names the client and what it may do, and you confirm with the main token (`wamcp token`). Access tokens last an hour and refresh for 30 days. `wamcp oauth list` shows approved clients, `wamcp oauth revoke <id>` cuts one off at once.
+- **OAuth** (works with any OAuth-only client): start the daemon with `--oauth` as well. The client registers itself, your browser opens a wamcp page that names the client and what it may do, and you confirm with the main token (`wamcp token`). Access tokens last an hour and refresh for 30 days. `wamcp oauth list` shows approved clients, `wamcp oauth revoke <id>` cuts one off at once. Ten wrong tokens in a minute lock the consent page for a minute. Use it together with `--public-host`, which makes the issuer `https://`.
 - **Static header**: a request header `Authorization: Bearer <token>` with the token from `wamcp token --mcp`, which cannot sign in to the web client (replace it any time with `wamcp token --rotate-mcp`). Anthropic documents request headers for custom connectors; check that your plan shows the field.
 
 With `--public-host` the web client always asks for the token, linking a phone needs a signed-in browser, and sending (if you turn it on) requires an allowlist.
