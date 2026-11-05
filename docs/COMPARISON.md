@@ -16,7 +16,7 @@ As of 2026-11-05. Stars, last push and license come from the GitHub API on that 
 | Stars / last push | new / this repo | 6814 / 2025-07-13 | 27 / 2026-11-02 |
 | License | AGPL-3.0 | MIT | no LICENSE file (`package.json` says MIT) |
 | Stack | Go, whatsmeow, SQLite | Go bridge (whatsmeow) + Python MCP server | TypeScript, Baileys or WhatsApp Cloud API, BullMQ |
-| To install | Go 1.26, `make install`; one binary, no cgo | Go, Python 3.11+, uv; cgo on Windows | Node 24+, Redis; Docker Compose recommended |
+| To install | download one static binary, or build with Go 1.26 | Go, Python 3.11+, uv; cgo on Windows | Node 24+, Redis; Docker Compose recommended |
 | MCP tools | 13 read tools, plus `send_message` when switched on | 12 (3 send) | 169, plus 3 opt-in |
 | Transports | stdio, streamable HTTP | stdio | stdio, streamable HTTP |
 | Auth on HTTP | token always on (MCP-only token or main token); OAuth 2.1 with PKCE opt-in | no MCP HTTP; bridge REST on `:8080` has no auth | none unless configured; API key, Basic or OAuth 2.1 |
@@ -59,7 +59,7 @@ Other projects with 40+ stars, facts from the GitHub API and their READMEs:
 
 ## Review of wamcp: gaps, ranked
 
-Fixed on branch `feat/opt-in-send`:
+Fixed since the first public release:
 
 1. **Web auto sign-in through a tunnel (high).** With `--web-auth local` on a loopback listener, a tunnel such as cloudflared running as the same OS user connects over loopback from a same-user process, so `sameUserPeer` signed in every visitor of the public hostname. A tunnel that rewrites the Host header to `localhost` (the usual workaround for the rebinding check) made this reachable. Now requests with proxy headers are never auto signed in, and `--public-host` forces token sign-in.
 2. **No supported way to run behind a tunnel (medium).** The Host check rejected the public name, so remote clients needed a non-loopback `--listen`. Added `--public-host`.
@@ -69,11 +69,11 @@ Fixed on branch `feat/opt-in-send`:
 6. **One token did everything (medium).** The MCP token also signed in to the web client, which can send without the policy. Added a separate MCP-only token (`wamcp token --mcp`, `--rotate-mcp`); `wamcp config` prints it.
 
 7. **No OAuth (high for remote use).** Clients that only speak OAuth could not connect. Added an opt-in OAuth 2.1 server (`--oauth`): metadata discovery, dynamic client registration, authorization code with S256 PKCE, rotating refresh tokens, owner approval with the main token, `wamcp oauth list|revoke`.
+8. **No prebuilt binaries (medium).** Installing needed Go 1.26. Tagged releases now ship static binaries for macOS and Linux, arm64 and amd64, with SHA256SUMS.
 
 Still open, in order of impact:
 
-1. **No prebuilt binaries.** Installing needs Go 1.26. Release binaries for macOS and Linux would make "one binary" true for people without Go.
-2. **Background service is macOS only.** Linux users write their own systemd unit.
-3. **No MCP media sending.** lharries and delltrak can send files and voice notes.
-4. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
-5. **Fewer tools than delltrak.** 13 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.
+1. **Background service is macOS only.** Linux users write their own systemd unit.
+2. **No MCP media sending.** lharries and delltrak can send files and voice notes.
+3. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
+4. **Fewer tools than delltrak.** 13 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.

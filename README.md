@@ -65,7 +65,7 @@ Where wamcp is ahead:
 Where others are ahead, today:
 
 - **Breadth.** delltrak has 169 tools, including group admin, business features, scheduling and the official WhatsApp Cloud API. lharries and delltrak can send files and voice notes; wamcp's MCP side sends text only.
-- **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything. wamcp needs Go 1.26 to build until release binaries exist.
+- **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything.
 
 ## Table of contents
 
@@ -97,6 +97,22 @@ Open the printed link (or run `wamcp open`). On your phone go to **WhatsApp > Se
 After linking, the phone uploads your history in batches. Keep WhatsApp open on the phone for a few minutes. Progress shows in the web client settings, in `wamcp status` and in the `whatsapp_status` MCP tool.
 
 ## Install
+
+### Download a release
+
+Static binaries for macOS and Linux (arm64 and amd64) are on the [Releases page](https://github.com/mi4uu/wamcp/releases). No Go needed. For example, macOS on Apple silicon:
+
+```sh
+V=v0.2.0                       # the latest release
+P=wamcp_${V}_darwin_arm64      # or darwin_amd64, linux_amd64, linux_arm64
+curl -fLO https://github.com/mi4uu/wamcp/releases/download/$V/$P.tar.gz
+curl -fLO https://github.com/mi4uu/wamcp/releases/download/$V/SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+tar -xzf $P.tar.gz
+install -d ~/.local/bin && install -m 0755 $P/wamcp ~/.local/bin/wamcp
+```
+
+The macOS binaries are not signed. Downloaded with `curl` they run as they are; if you download one in a browser, clear the quarantine flag first: `xattr -d com.apple.quarantine wamcp`.
 
 ### From source
 
