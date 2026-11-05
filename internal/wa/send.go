@@ -26,8 +26,9 @@ import (
 	"github.com/mi4uu/wamcp/internal/ingest"
 )
 
-// Actions in this file are only reachable from the authenticated web client;
-// the MCP server never sends anything to WhatsApp.
+// Actions in this file are reachable from the authenticated web client. The
+// MCP server reaches only SendTextWithID, and only through internal/outbox
+// when the daemon runs with --mcp-allow-send.
 
 func (m *Manager) target(chat string) (*whatsmeow.Client, types.JID, error) {
 	cli, err := m.connectedClient()
@@ -84,6 +85,21 @@ func (m *Manager) quote(ctx context.Context, chat, replyTo string) *waE2E.Contex
 
 // SendText sends a text message, optionally as a reply to replyTo.
 func (m *Manager) SendText(ctx context.Context, chat, text, replyTo string) (*ingest.MessageResult, error) {
+	return m.SendTextWithID(ctx, chat, text, replyTo, "")
+}
+
+// NewMessageID returns a fresh WhatsApp message ID, or "" while disconnected.
+func (m *Manager) NewMessageID() string {
+	if cli := m.Client(); cli != nil {
+		return string(cli.GenerateMessageID())
+	}
+	return ""
+}
+
+// SendTextWithID is SendText with a caller-chosen message ID ("" for a new
+// one). Reusing the ID of an attempt whose outcome is unknown lets WhatsApp
+// treat a resend as the same message.
+func (m *Manager) SendTextWithID(ctx context.Context, chat, text, replyTo, id string) (*ingest.MessageResult, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return nil, errors.New("empty message")
@@ -96,7 +112,7 @@ func (m *Manager) SendText(ctx context.Context, chat, text, replyTo string) (*in
 	if ci := m.quote(ctx, chat, replyTo); ci != nil {
 		msg = &waE2E.Message{ExtendedTextMessage: &waE2E.ExtendedTextMessage{Text: proto.String(text), ContextInfo: ci}}
 	}
-	resp, err := cli.SendMessage(ctx, to, msg)
+	resp, err := cli.SendMessage(ctx, to, msg, whatsmeow.SendRequestExtra{ID: types.MessageID(id)})
 	if err != nil {
 		return nil, err
 	}

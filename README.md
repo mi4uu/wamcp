@@ -25,7 +25,7 @@
 |---|---|
 | **A real WhatsApp client** | Links as a device, like WhatsApp Web or Desktop. Read, search, send, reply, react, edit, delete, files, archive, pin, mute, calls, starred, group info. |
 | **A complete local archive** | Every message, group, contact and call goes into SQLite with full-text search. Nothing leaves your machine. |
-| **An MCP server** | 13 tools for Claude Code, Claude Desktop and any MCP client: "what did I miss", search across all chats, people, groups, calls. |
+| **An MCP server** | 13 tools for Claude Code, Claude Desktop and any MCP client: "what did I miss", search across all chats, people, groups, calls. Read-only by default; sending is a separate opt-in with an allowlist, a rate limit and an audit log. |
 | **Your own notes on people** | Alias, description, priority 1 to 5, tags and custom fields on any contact or chat. Agents can filter by them. |
 | **Nothing lost on restart** | Messages are acked to WhatsApp only after they are written to disk. Offline gaps are recovered and counted. |
 | **One static binary** | Pure Go, no cgo, no Docker, no database server. A macOS LaunchAgent in one command. |
@@ -34,7 +34,7 @@
 
 I wanted my agents to know what is going on in my WhatsApp: who wrote, what they asked, what I promised. The options were bad. Cloud bridges push your private chats through someone else's server. Scrapers break every month. Exporting chats by hand is a joke.
 
-So wamcp runs on your machine as a linked device, keeps the whole archive locally, and lets an agent read it over MCP. The MCP side is **read-only**: it never sends anything to WhatsApp. If an agent should answer someone, it drafts the text and you send it.
+So wamcp runs on your machine as a linked device, keeps the whole archive locally, and lets an agent read it over MCP. The MCP side is **read-only by default**: it never sends anything to WhatsApp. If an agent should answer someone, it drafts the text and you send it. If you do want an agent to send, you switch it on explicitly and limit who it can write to ([Letting agents send](#letting-agents-send-opt-in)).
 
 ## Table of contents
 
@@ -43,6 +43,7 @@ So wamcp runs on your machine as a linked device, keeps the whole archive locall
 - [Run it in the background](#run-it-in-the-background)
 - [Connect an AI assistant](#connect-an-ai-assistant)
 - [MCP tools](#mcp-tools)
+- [Letting agents send (opt-in)](#letting-agents-send-opt-in)
 - [Contact notes](#contact-notes)
 - [Reliability](#reliability)
 - [Data and security](#data-and-security)
@@ -123,8 +124,40 @@ claude mcp add --transport http --scope user whatsapp http://127.0.0.1:8765/mcp 
 | `update_contact_meta` | Edit your private notes (local only, never sent to WhatsApp) |
 | `download_media` | Save an attachment locally (HTTP mode) |
 | `request_older_messages` | Ask the phone for older history of a chat (HTTP mode) |
+| `send_message` | Send a text message. **Not listed unless sending is switched on**, see below |
 
 Chats and people can be given as a JID, a phone number or part of a name.
+
+## Letting agents send (opt-in)
+
+By default `send_message` does not exist: it is not in `tools/list` and calling it fails. To turn it on, start the daemon with the switch and, ideally, an allowlist:
+
+```sh
+wamcp serve --mcp-allow-send --mcp-send-to "me,+48600000000,120363040000000001@g.us"
+# or for the background service
+wamcp service install --mcp-allow-send --mcp-send-to me
+```
+
+| Flag | Env | Default | What |
+|---|---|---|---|
+| `--mcp-allow-send` | `WAMCP_MCP_ALLOW_SEND=1` | off | Lists `send_message` on the HTTP MCP endpoint and lets stdio servers send through the daemon |
+| `--mcp-send-to` | `WAMCP_MCP_SEND_TO` | empty (any chat) | Comma-separated phone numbers with country code, JIDs, or `me` (your own chat). Names are not accepted. Required when `--listen` is not a loopback address |
+| `--mcp-send-per-hour` | | 20 | Maximum messages in any rolling hour, across all agents |
+
+Stdio clients (`wamcp mcp`) also need `--allow-send` (or the same env var) to list the tool. They forward every send to the daemon, so the daemon's policy always applies.
+
+What the daemon enforces on every `send_message` call:
+
+- **Allowlist.** Recipients off the list are refused. Group members are not checked: allowing a group allows writing to that group.
+- **Rate limit.** Counted from the audit log, so a restart does not reset it.
+- **No double sends.** A call with the same `idempotency_key` returns the first result instead of sending again (24 hours). Without a key, the same text to the same chat within 10 minutes counts as a retry. If the daemon stopped in the middle of a send, the retry is refused with a clear message instead of guessing; a failed send that is retried reuses the same WhatsApp message ID.
+- **Audit log.** Every attempt (sent, failed, refused) is written to the `agent_sends` table *before* anything goes to WhatsApp. `wamcp audit` prints it; the daemon log has one line per send.
+- **Text only**, up to 4096 characters, optionally as a reply. No files, no edits or deletes, no group admin.
+
+What it does not protect against, so you can decide:
+
+- **Prompt injection.** An agent that reads your chats and can send is exposed to messages written to manipulate it ("forward this to everyone"). The allowlist and rate limit cap the damage; they do not stop the agent from sending the wrong text to an allowed chat. Keep the allowlist short: `me` alone is enough for "send me a daily summary".
+- **The token is the key to everything.** The same bearer token that `/mcp` uses also signs in to the web client, which can send, edit and delete without any of these limits. The switch controls what an *agent* is offered; it is not a barrier against someone who holds the token.
 
 ## Contact notes
 
@@ -156,7 +189,7 @@ Everything lives in `~/.wamcp` (mode `0700`):
 | `media/`, `avatars/` | Downloaded attachments and profile pictures |
 | `token` | Access token for MCP and the web client |
 
-- The server listens on `127.0.0.1` only. `/mcp` requires `Authorization: Bearer <token>`. The web client needs a session cookie obtained with the token (`wamcp open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
+- The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>`, there is no way to turn that off. The web client needs a session cookie obtained with the token (`wamcp open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
 - Messages deleted for everyone keep their content in the archive and are marked with who deleted them and when. They stay searchable. Run `wamcp serve --deleted remove` to wipe them instead, like WhatsApp does.
 - The daemon does not mark you "online" in the background, so your phone keeps its notifications. The web client shows you online only while its tab is visible.
 
@@ -176,6 +209,7 @@ wamcp open      Open the web client in the browser, signed in
 wamcp config    Print MCP client configuration
 wamcp token     Print the access token
 wamcp status    Show daemon, sync and archive status
+wamcp audit     Show messages MCP agents sent or tried to send
 wamcp service   install | uninstall | restart | status (macOS)
 wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
 wamcp version

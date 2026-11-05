@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/mi4uu/wamcp/internal/archive"
+	"github.com/mi4uu/wamcp/internal/outbox"
 	"github.com/mi4uu/wamcp/internal/wa"
 )
 
@@ -56,6 +57,12 @@ type Daemon interface {
 	SubscribePresence(ctx context.Context, jid string) error
 }
 
+// AgentSender is the send policy for MCP agents (internal/outbox).
+type AgentSender interface {
+	SendText(ctx context.Context, req outbox.Request) (outbox.Result, error)
+	Policy() string
+}
+
 // Options configures the HTTP handler.
 type Options struct {
 	Token        string       // bearer token for /mcp and the web login
@@ -67,6 +74,9 @@ type Options struct {
 	// TrustLocal signs in every browser connecting from this machine, so the
 	// web client needs no token. /mcp always requires the bearer token.
 	TrustLocal bool
+	// AgentSend is set when the daemon runs with --mcp-allow-send; it serves
+	// send_message for stdio MCP servers.
+	AgentSend AgentSender
 }
 
 const cookieName = "wamcp_session"
@@ -208,6 +218,8 @@ func Handler(opt Options) *Server {
 	mux.Handle("GET /api/live/status", s.bearer(http.HandlerFunc(s.apiLiveStatus)))
 	mux.Handle("POST /api/live/media", s.bearer(http.HandlerFunc(s.apiLiveMedia)))
 	mux.Handle("POST /api/live/older", s.bearer(http.HandlerFunc(s.apiLiveOlder)))
+	mux.Handle("GET /api/live/send", s.bearer(http.HandlerFunc(s.apiLiveSendPolicy)))
+	mux.Handle("POST /api/live/send", s.bearer(http.HandlerFunc(s.apiLiveSend)))
 
 	// Signed in.
 	auth := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireSession(h)) }
@@ -420,6 +432,38 @@ func (s *server) apiLiveOlder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+var errSendDisabled = errors.New("sending is disabled: the daemon was started without --mcp-allow-send")
+
+func (s *server) apiLiveSendPolicy(w http.ResponseWriter, _ *http.Request) {
+	if s.opt.AgentSend == nil {
+		writeError(w, http.StatusForbidden, errSendDisabled)
+		return
+	}
+	writeJSON(w, map[string]string{"policy": s.opt.AgentSend.Policy()})
+}
+
+func (s *server) apiLiveSend(w http.ResponseWriter, r *http.Request) {
+	if s.opt.AgentSend == nil {
+		writeError(w, http.StatusForbidden, errSendDisabled)
+		return
+	}
+	var in outbox.Request
+	if err := readJSON(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	res, err := s.opt.AgentSend.SendText(r.Context(), in)
+	switch {
+	case errors.Is(err, outbox.ErrNotAllowed), errors.Is(err, outbox.ErrRateLimited),
+		errors.Is(err, outbox.ErrUnknownOutcome), errors.Is(err, outbox.ErrKeyReused):
+		writeError(w, http.StatusConflict, err)
+	case err != nil:
+		writeError(w, http.StatusBadGateway, err)
+	default:
+		writeJSON(w, res)
+	}
 }
 
 func (s *server) apiLoginCode(w http.ResponseWriter, _ *http.Request) {
