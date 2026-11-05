@@ -69,11 +69,11 @@ Fixed on branch `feat/opt-in-send`:
 6. **One token did everything (medium).** The MCP token also signed in to the web client, which can send without the policy. Added a separate MCP-only token (`wamcp token --mcp`, `--rotate-mcp`); `wamcp config` prints it.
 
 7. **No OAuth (high for remote use).** Clients that only speak OAuth could not connect. Added an opt-in OAuth 2.1 server (`--oauth`): metadata discovery, dynamic client registration, authorization code with S256 PKCE, rotating refresh tokens, owner approval with the main token, `wamcp oauth list|revoke`.
+8. **Background service was macOS only (medium).** `wamcp service` now writes a systemd user unit on Linux, tested on Debian trixie.
 
 Still open, in order of impact:
 
 1. **No prebuilt binaries.** Installing needs Go 1.26. Release binaries for macOS and Linux would make "one binary" true for people without Go.
-2. **Background service is macOS only.** Linux users write their own systemd unit.
-3. **No MCP media sending.** lharries and delltrak can send files and voice notes.
-4. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
-5. **Fewer tools than delltrak.** 13 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.
+2. **No MCP media sending.** lharries and delltrak can send files and voice notes.
+3. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
+4. **Fewer tools than delltrak.** 13 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.

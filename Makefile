@@ -13,7 +13,7 @@ test:
 install: build
 	install -d $(PREFIX)/bin
 	install -m 0755 bin/wamcp $(PREFIX)/bin/wamcp
-	@if [ -f $(HOME)/Library/LaunchAgents/dev.wamcp.daemon.plist ]; then $(PREFIX)/bin/wamcp service restart; fi
+	@if [ -f $(HOME)/Library/LaunchAgents/dev.wamcp.daemon.plist ] || [ -f $${XDG_CONFIG_HOME:-$(HOME)/.config}/systemd/user/wamcp.service ]; then $(PREFIX)/bin/wamcp service restart; fi
 
 run: build
 	./bin/wamcp serve

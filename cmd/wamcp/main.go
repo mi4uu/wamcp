@@ -347,7 +347,7 @@ func (l *rotatingLog) Write(p []byte) (int, error) {
 }
 
 // crashLoop records a startup failure of the background service and reports
-// whether to give up (5 failures within 10 minutes), so launchd stops
+// whether to give up (5 failures within 10 minutes), so launchd or systemd stops
 // restarting a daemon that cannot start instead of looping forever.
 func crashLoop(paths config.Paths, cause error) bool {
 	file := filepath.Join(paths.Dir, "crashloop")
@@ -384,7 +384,7 @@ func cmdServe(args []string) (retErr error) {
 	useOAuth := fs.Bool("oauth", envBool("WAMCP_OAUTH"),
 		"let MCP clients connect with OAuth (claude.ai connectors and others); you approve each client with the access token, env WAMCP_OAUTH")
 	webAuth := fs.String("web-auth", "local", "web client sign-in: local (browsers on this machine are signed in automatically) or token")
-	asService := fs.Bool("service", false, "running under launchd (stop restarting after repeated startup failures)")
+	asService := fs.Bool("service", false, "running as the background service (stop restarting after repeated startup failures)")
 	_ = fs.Parse(args)
 	if *deleted != "keep" && *deleted != "remove" {
 		return fmt.Errorf("--deleted must be keep or remove, got %q", *deleted)
@@ -402,7 +402,7 @@ func cmdServe(args []string) (retErr error) {
 		defer func() {
 			if retErr != nil && time.Since(started) < time.Minute && crashLoop(paths, retErr) {
 				fmt.Fprintf(os.Stderr, "wamcp: giving up after repeated startup failures: %v\nFix the cause, then run `wamcp service restart`.\n", retErr)
-				retErr = nil // exit 0: launchd does not restart a successful exit
+				retErr = nil // exit 0: neither launchd nor systemd restarts a successful exit
 			}
 		}()
 		time.AfterFunc(time.Minute, func() { _ = os.Remove(filepath.Join(paths.Dir, "crashloop")) })
@@ -867,7 +867,11 @@ func cmdService(args []string) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Installed %s\nThe daemon now runs in the background and starts at login.\nLogs: %s\nNext: wamcp open\n", path, logFile)
+		fmt.Printf("Installed %s\nThe daemon now runs in the background and starts at login.\nLogs: %s\n", path, logFile)
+		if note := service.Notes(); note != "" {
+			fmt.Println(note)
+		}
+		fmt.Println("Next: wamcp open")
 		return nil
 	case "uninstall":
 		if err := service.Uninstall(); err != nil {
