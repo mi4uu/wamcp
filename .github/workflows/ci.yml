@@ -32,3 +32,19 @@ jobs:
           wamcp version | grep -q v0.0.0-ci
           test -f /usr/lib/systemd/user/wamcp.service
           cd dist/v0.0.0-ci && sha256sum -c SHA256SUMS
+      - name: Install the .rpm on Fedora and run it
+        run: |
+          docker run --rm -v "$PWD/dist/v0.0.0-ci:/d:ro" fedora:44 sh -ec '
+            rpm -i /d/*.x86_64.rpm
+            wamcp version | grep -q v0.0.0-ci
+            test -f /usr/lib/systemd/user/wamcp.service
+            rpm -e wamcp
+            ! test -e /usr/bin/wamcp'
+      - name: Install the Arch package and run it
+        run: |
+          docker run --rm -v "$PWD/dist/v0.0.0-ci:/d:ro" archlinux:latest sh -ec '
+            pacman -U --noconfirm /d/*-x86_64.pkg.tar.zst
+            wamcp version | grep -q v0.0.0-ci
+            test -f /usr/lib/systemd/user/wamcp.service
+            pacman -R --noconfirm wamcp
+            ! test -e /usr/bin/wamcp'
