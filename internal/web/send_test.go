@@ -1,8 +1,10 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,7 +22,31 @@ func (f *fakeSender) SendText(_ context.Context, req outbox.Request) (outbox.Res
 	return outbox.Result{Chat: req.Chat, MessageID: "ID1"}, nil
 }
 
+func (f *fakeSender) SendFile(ctx context.Context, req outbox.Request) (outbox.Result, error) {
+	if req.File == nil {
+		return outbox.Result{}, errors.New("no file")
+	}
+	return f.SendText(ctx, req)
+}
+
 func (f *fakeSender) Policy() string { return "recipients: me" }
+
+// TestLiveSendFile checks that a file far over the usual 1 MB JSON limit
+// reaches SendFile intact.
+func TestLiveSendFile(t *testing.T) {
+	base, d := setup(t)
+	snd := &fakeSender{}
+	srv := Handler(Options{Token: testToken, MCP: http.NotFoundHandler(), Archive: base.s.opt.Archive, Daemon: d, AgentSend: snd})
+	data := bytes.Repeat([]byte{0xff, 0xd8, 0x01}, 3<<20)
+	body, _ := json.Marshal(outbox.Request{Chat: "a@s.whatsapp.net", Text: "caption", File: &outbox.File{Data: data, Name: "x.jpg"}})
+	rec := do(srv, "POST", "/api/live/send", string(body), map[string]string{"Authorization": "Bearer " + testToken})
+	if rec.Code != http.StatusOK || len(snd.reqs) != 1 {
+		t.Fatalf("send file: %d %s", rec.Code, rec.Body)
+	}
+	if got := snd.reqs[0].File; got == nil || !bytes.Equal(got.Data, data) || got.Name != "x.jpg" {
+		t.Fatal("file did not arrive intact")
+	}
+}
 
 func TestLiveSendDisabledByDefault(t *testing.T) {
 	srv, _ := setup(t)

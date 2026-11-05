@@ -64,7 +64,7 @@ Where wamcp is ahead:
 
 Where others are ahead, today:
 
-- **Breadth.** delltrak has 169 tools, including group admin, business features, scheduling and the official WhatsApp Cloud API. lharries and delltrak can send files and voice notes; wamcp's MCP side sends text only.
+- **Breadth.** delltrak has 169 tools, including group admin, business features, scheduling, polls and albums, and the official WhatsApp Cloud API. wamcp has 15: it reads everything and, when you switch it on, sends text, files and voice notes.
 - **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything. wamcp needs Go 1.26 to build until release binaries exist.
 
 ## Table of contents
@@ -175,12 +175,13 @@ With `--public-host` the web client always asks for the token, linking a phone n
 | `download_media` | Save an attachment locally (HTTP mode) |
 | `request_older_messages` | Ask the phone for older history of a chat (HTTP mode) |
 | `send_message` | Send a text message. **Not listed unless sending is switched on**, see below |
+| `send_file` | Send a photo, video, audio file, voice note or document, with a caption. **Not listed unless sending is switched on** |
 
 Chats and people can be given as a JID, a phone number or part of a name.
 
 ## Letting agents send (opt-in)
 
-By default `send_message` does not exist: it is not in `tools/list` and calling it fails. To turn it on, start the daemon with the switch and, ideally, an allowlist:
+By default `send_message` and `send_file` do not exist: they are not in `tools/list` and calling them fails. To turn it on, start the daemon with the switch and, ideally, an allowlist:
 
 ```sh
 wamcp serve --mcp-allow-send --mcp-send-to "me,+48600000000,120363040000000001@g.us"
@@ -190,19 +191,21 @@ wamcp service install --mcp-allow-send --mcp-send-to me
 
 | Flag | Env | Default | What |
 |---|---|---|---|
-| `--mcp-allow-send` | `WAMCP_MCP_ALLOW_SEND=1` | off | Lists `send_message` on the HTTP MCP endpoint and lets stdio servers send through the daemon |
+| `--mcp-allow-send` | `WAMCP_MCP_ALLOW_SEND=1` | off | Lists `send_message` and `send_file` on the HTTP MCP endpoint and lets stdio servers send through the daemon |
 | `--mcp-send-to` | `WAMCP_MCP_SEND_TO` | empty (any chat) | Comma-separated phone numbers with country code, JIDs, or `me` (your own chat). Names are not accepted. Required when `--listen` is not a loopback address |
-| `--mcp-send-per-hour` | | 20 | Maximum messages in any rolling hour, across all agents |
+| `--mcp-send-per-hour` | | 20 | Maximum messages and files in any rolling hour, across all agents |
+| `--mcp-send-files-from` | `WAMCP_MCP_SEND_FILES_FROM` | empty (no paths) | The only directory `send_file` may read a path from |
 
 Stdio clients (`wamcp mcp`) also need `--allow-send` (or the same env var) to list the tool. They forward every send to the daemon, so the daemon's policy always applies.
 
-What the daemon enforces on every `send_message` call:
+What the daemon enforces on every `send_message` and `send_file` call:
 
 - **Allowlist.** Recipients off the list are refused. Group members are not checked: allowing a group allows writing to that group.
 - **Rate limit.** Counted from the audit log, so a restart does not reset it. Failed sends count too, since an error does not prove the message was dropped.
 - **No double sends.** A call with the same `idempotency_key` returns the first result instead of sending again (24 hours). Without a key, the same text to the same chat within 10 minutes counts as a retry. If the daemon stopped in the middle of a send, the retry is refused with a clear message instead of guessing; a failed send that is retried reuses the same WhatsApp message ID.
 - **Audit log.** Every call is written to the `agent_sends` table as sent, failed, refused or duplicate, and a send is recorded *before* anything goes to WhatsApp. `wamcp audit` prints it; the daemon log has one line per call. Refused and duplicate calls stop being stored after 200 in an hour (they are still logged), so a looping agent cannot fill the disk.
-- **Text only**, up to 4096 characters, optionally as a reply. No files, no edits or deletes, no group admin.
+- **Files from three places only.** `send_file` takes the file as base64 data from the agent, forwards an attachment already downloaded to the archive, or reads a path inside `--mcp-send-files-from`. Without that flag no path is accepted, so an agent cannot send `~/.ssh` or anything else on your disk; paths that leave the directory, also through symlinks, are refused. Files are capped at 16 MB, voice notes must be Ogg Opus, and the audit log records each file by name, type, size and SHA-256.
+- **No edits, deletes or group admin.** Text is up to 4096 characters, optionally as a reply.
 
 What it does not protect against, so you can decide:
 

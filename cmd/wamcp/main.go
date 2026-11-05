@@ -166,17 +166,20 @@ func envBool(name string) bool {
 
 // sendFlags are the opt-in switches for MCP sending.
 type sendFlags struct {
-	allow   bool
-	to      string
-	perHour int
+	allow     bool
+	to        string
+	perHour   int
+	filesFrom string
 }
 
 func (f *sendFlags) register(fs *flag.FlagSet) {
 	fs.BoolVar(&f.allow, "mcp-allow-send", envBool("WAMCP_MCP_ALLOW_SEND"),
-		"let MCP agents send WhatsApp text messages (send_message tool); off by default, env WAMCP_MCP_ALLOW_SEND")
+		"let MCP agents send WhatsApp messages and files (send_message and send_file tools); off by default, env WAMCP_MCP_ALLOW_SEND")
 	fs.StringVar(&f.to, "mcp-send-to", os.Getenv("WAMCP_MCP_SEND_TO"),
 		"comma-separated recipients agents may send to: phone numbers with country code, JIDs, or me; empty allows any chat (loopback only), env WAMCP_MCP_SEND_TO")
 	fs.IntVar(&f.perHour, "mcp-send-per-hour", outbox.DefaultPerHour, "maximum messages agents may send in any rolling hour")
+	fs.StringVar(&f.filesFrom, "mcp-send-files-from", os.Getenv("WAMCP_MCP_SEND_FILES_FROM"),
+		"the only directory send_file may read a path from; empty allows no paths (files as data or archived media still work), env WAMCP_MCP_SEND_FILES_FROM")
 }
 
 func (f *sendFlags) args() []string {
@@ -187,6 +190,9 @@ func (f *sendFlags) args() []string {
 	if f.to != "" {
 		out = append(out, "--mcp-send-to", f.to)
 	}
+	if f.filesFrom != "" {
+		out = append(out, "--mcp-send-files-from", f.filesFrom)
+	}
 	return out
 }
 
@@ -196,7 +202,7 @@ func (f *sendFlags) outbox(exposed bool, arc *archive.Store, mgr *wa.Manager, lo
 		return nil, nil
 	}
 	allow := strings.Split(f.to, ",")
-	ob, err := outbox.New(arc, outbox.Config{Allow: allow, PerHour: f.perHour},
+	ob, err := outbox.New(arc, outbox.Config{Allow: allow, PerHour: f.perHour, FilesDir: f.filesFrom},
 		func(ctx context.Context, chat, text, replyTo, id string) (string, error) {
 			res, err := mgr.SendTextWithID(ctx, chat, text, replyTo, id)
 			if err != nil {
@@ -205,7 +211,17 @@ func (f *sendFlags) outbox(exposed bool, arc *archive.Store, mgr *wa.Manager, lo
 			return res.ID, nil
 		}, mgr.NewMessageID, log)
 	if err != nil {
-		return nil, fmt.Errorf("--mcp-send-to: %w", err)
+		return nil, fmt.Errorf("--mcp-send-to or --mcp-send-files-from: %w", err)
+	}
+	if mgr != nil {
+		ob.WithFiles(func(ctx context.Context, chat string, file outbox.File, caption, replyTo, id string) (string, error) {
+			res, err := mgr.SendMediaWithID(ctx, chat, wa.MediaUpload{Data: file.Data, FileName: file.Name, MimeType: file.MimeType,
+				Caption: caption, ReplyTo: replyTo, Voice: file.Voice, AsFile: file.AsDocument}, id)
+			if err != nil {
+				return "", err
+			}
+			return res.ID, nil
+		})
 	}
 	if ob.AllowsAnyone() && exposed {
 		return nil, errors.New("--mcp-allow-send with a non-loopback --listen or a --public-host needs a recipient allowlist (--mcp-send-to)")
@@ -288,6 +304,12 @@ type remoteSender struct {
 }
 
 func (r *remoteSender) SendText(ctx context.Context, req outbox.Request) (outbox.Result, error) {
+	var out outbox.Result
+	err := r.call(ctx, http.MethodPost, "/api/live/send", req, &out)
+	return out, err
+}
+
+func (r *remoteSender) SendFile(ctx context.Context, req outbox.Request) (outbox.Result, error) {
 	var out outbox.Result
 	err := r.call(ctx, http.MethodPost, "/api/live/send", req, &out)
 	return out, err
@@ -469,7 +491,7 @@ func cmdServe(args []string) (retErr error) {
 		}
 		access := "read your chats, messages, contacts, groups and calls"
 		if ob != nil {
-			access += ", and send text messages (" + ob.Policy() + ")"
+			access += ", and send messages and files (" + ob.Policy() + ")"
 		} else {
 			access += "; it cannot send anything"
 		}
