@@ -36,8 +36,41 @@ I wanted my agents to know what is going on in my WhatsApp: who wrote, what they
 
 So wamcp runs on your machine as a linked device, keeps the whole archive locally, and lets an agent read it over MCP. The MCP side is **read-only by default**: it never sends anything to WhatsApp. If an agent should answer someone, it drafts the text and you send it. If you do want an agent to send, you switch it on explicitly and limit who it can write to ([Letting agents send](#letting-agents-send-opt-in)).
 
+## How wamcp compares
+
+WhatsApp MCP servers on GitHub with 40+ stars, as of 2026-11-05. Stars, dates and licenses from the GitHub API; the rest from each project's code or README. Details, sources and our own open gaps: [docs/COMPARISON.md](docs/COMPARISON.md).
+
+| Project | Stars | Last push | Runs as | Your messages live | Sends by default | Auth on HTTP |
+|---|---|---|---|---|---|---|
+| **wamcp** (this repo) | new | active | one Go binary | your disk, full history | **no**, opt-in with allowlist, rate limit, audit | bearer token, always on |
+| [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp) | 6814 | 2025-07-13 | Go bridge + Python | your disk | yes | no MCP HTTP; bridge API on all interfaces, no auth |
+| [finereli/whatsapp-mcp](https://github.com/finereli/whatsapp-mcp) | 404 | 2026-10-24 | Cloudflare Worker | Cloudflare, encrypted | cannot send | OAuth |
+| [verygoodplugins/whatsapp-mcp](https://github.com/verygoodplugins/whatsapp-mcp) | 283 | 2026-10-30 | Go bridge + Python | your disk | yes | none on MCP HTTP |
+| [felipeadeildo/whatsapp-mcp](https://github.com/felipeadeildo/whatsapp-mcp) | 98 | 2026-11-03 | Cloudflare Worker | your Cloudflare account | yes | OAuth or bearer |
+| [jlucaso1/whatsapp-mcp-ts](https://github.com/jlucaso1/whatsapp-mcp-ts) | 75 | 2026-01-23 | Node | your disk | yes | stdio only |
+| [BrOrlandi/whatsapp-mcp-local](https://github.com/BrOrlandi/whatsapp-mcp-local) | 70 | 2026-11-03 | desktop app | your disk | yes | localhost, no auth |
+| [BrOrlandi/whatsapp-mcp](https://github.com/BrOrlandi/whatsapp-mcp) | 64 | 2026-10-09 | Docker Compose | your server | yes | setup token |
+| [pnizer/wweb-mcp](https://github.com/pnizer/wweb-mcp) | 46 | 2025-07-18 | Node + headless Chrome | your disk | yes | optional API key |
+| [FelixIsaac/whatsapp-mcp-extended](https://github.com/FelixIsaac/whatsapp-mcp-extended) | 44 | 2026-11-02 | Go bridge + Python | your disk | yes, optional allowlist | stdio only |
+| [delltrak/wamcp](https://github.com/delltrak/wamcp) (different project, same name) | 27 | 2026-11-02 | Node + Redis, Docker | your server, 30 days by default | yes | none unless configured; key, Basic or OAuth 2.1 |
+
+Where wamcp is ahead:
+
+- **Safe by default.** It is the only one in the table that is read-only out of the box and can still send when you ask for it, behind an allowlist, an hourly limit, retry de-duplication and an audit log.
+- **The whole archive, on your disk.** Every message, edit, deletion, group, contact and call, kept for good, with accent-insensitive full-text search. No cloud account, no retention window.
+- **One binary.** No Python, Node, Redis, Docker or Chrome. A web client is built in.
+- **Remote access with auth that cannot be switched off.** Streamable HTTP always needs the bearer token; `--public-host` puts it behind your own tunnel.
+- **Nothing lost on a crash.** Messages are acknowledged to WhatsApp only after they are on disk.
+
+Where others are ahead, today:
+
+- **OAuth.** finereli, felipeadeildo and delltrak speak OAuth, so any OAuth-only client can connect. wamcp needs a client that can send a bearer header.
+- **Breadth.** delltrak has 169 tools, including group admin, business features, scheduling and the official WhatsApp Cloud API. lharries and delltrak can send files and voice notes; wamcp's MCP side sends text only.
+- **Reach.** lharries has 6.8k stars and a big community of forks. finereli has a hosted version you can try without installing anything. wamcp needs Go 1.26 to build until release binaries exist.
+
 ## Table of contents
 
+- [How wamcp compares](#how-wamcp-compares)
 - [Quick start](#quick-start)
 - [Install](#install)
 - [Run it in the background](#run-it-in-the-background)
