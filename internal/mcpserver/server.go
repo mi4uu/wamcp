@@ -189,7 +189,7 @@ func (s *server) status(ctx context.Context, _ *mcp.CallToolRequest, _ statusIn)
 	} else {
 		state := st.State
 		if s.live == nil && time.Since(st.UpdatedAt) > 3*time.Minute {
-			state += fmt.Sprintf(" (last report %s ago — the daemon is probably not running)", time.Since(st.UpdatedAt).Round(time.Minute))
+			state += fmt.Sprintf(" (last report %s ago; the daemon is probably not running)", time.Since(st.UpdatedAt).Round(time.Minute))
 		}
 		fmt.Fprintf(&b, "Daemon: %s\n", state)
 		if st.Account != "" {

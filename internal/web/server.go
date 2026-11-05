@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mi4uu/wamcp/internal/about"
 	"github.com/mi4uu/wamcp/internal/archive"
 	"github.com/mi4uu/wamcp/internal/oauth"
 	"github.com/mi4uu/wamcp/internal/outbox"
@@ -89,6 +90,8 @@ type Options struct {
 	// OAuth is set when the daemon runs with --oauth. Its access tokens open
 	// what the MCP token opens.
 	OAuth *oauth.Handler
+	// About is shown in Settings > About.
+	About about.Info
 }
 
 const cookieName = "wamcp_session"
@@ -243,6 +246,7 @@ func Handler(opt Options) *Server {
 	auth := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireSession(h)) }
 	auth("POST /api/logout", s.apiLogout)
 	auth("GET /api/status", s.apiStatus)
+	auth("GET /api/about", s.apiAbout)
 	auth("GET /api/events", s.apiEvents)
 	auth("GET /api/chats", s.apiChats)
 	auth("GET /api/chats/{jid}", s.apiChatInfo)

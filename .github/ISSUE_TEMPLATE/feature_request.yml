@@ -1,0 +1,21 @@
+name: Feature request
+description: Something wamcp should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: The task, not the solution. For example "get a daily summary of a group chat".
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could wamcp help?
+      description: A tool, a flag, a change to the web client. Optional.
+  - type: textarea
+    id: others
+    attributes:
+      label: Does another project do this?
+      description: A link helps.

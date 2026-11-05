@@ -17,7 +17,7 @@ type formatter struct {
 
 func (f formatter) time(ts int64) string {
 	if ts == 0 {
-		return "—"
+		return "unknown"
 	}
 	return time.Unix(ts, 0).In(f.loc).Format("2006-01-02 15:04")
 }
@@ -65,7 +65,7 @@ func (f formatter) body(m archive.Message) string {
 	switch m.Kind {
 	case "text":
 	case "system":
-		return deleted + "— " + jidPattern.ReplaceAllStringFunc(m.Text, f.dir.Name)
+		return deleted + "[system] " + jidPattern.ReplaceAllStringFunc(m.Text, f.dir.Name)
 	case "voice", "audio", "video", "video_note", "gif":
 		label := strings.ReplaceAll(m.Kind, "_", " ")
 		if m.Kind == "voice" {

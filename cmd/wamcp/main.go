@@ -27,6 +27,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"golang.org/x/term"
 
+	"github.com/mi4uu/wamcp/internal/about"
 	"github.com/mi4uu/wamcp/internal/archive"
 	"github.com/mi4uu/wamcp/internal/config"
 	"github.com/mi4uu/wamcp/internal/mcpserver"
@@ -39,7 +40,7 @@ import (
 
 var version = "dev"
 
-const usage = `wamcp — WhatsApp archive, web client and MCP server
+const usage = `wamcp: WhatsApp archive, web client and MCP server
 
 Usage:
   wamcp serve     Run the daemon: link/sync WhatsApp, web client and MCP over HTTP
@@ -50,7 +51,8 @@ Usage:
   wamcp status    Show daemon, sync and archive status
   wamcp audit     Show messages MCP agents sent or tried to send
   wamcp oauth     list | revoke <client id>: OAuth clients you approved (--oauth)
-  wamcp service   install | uninstall | restart | status — run the daemon in the background (macOS)
+  wamcp service   install | uninstall | restart | status: run the daemon in the background (macOS, Linux)
+  wamcp bug       Open a pre-filled GitHub bug report (version and OS only)
   wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
   wamcp version
 
@@ -87,6 +89,8 @@ func main() {
 		err = cmdService(args)
 	case "logout":
 		err = cmdLogout(args)
+	case "bug":
+		err = cmdBug(args)
 	case "version", "--version", "-v":
 		fmt.Println("wamcp", version)
 	case "help", "--help", "-h":
@@ -471,6 +475,7 @@ func cmdServe(args []string) (retErr error) {
 		}
 		webOpts.OAuth = &oauth.Handler{S: srv, OwnerToken: token, Access: access}
 	}
+	webOpts.About = about.New(version, setupSummary(*asService, ob != nil, *useOAuth, len(publicHosts) > 0))
 	if ob != nil {
 		mcpOpts = append(mcpOpts, mcpserver.WithSender(ob))
 		webOpts.AgentSend = ob
@@ -890,6 +895,42 @@ func cmdService(args []string) error {
 		return nil
 	}
 	return fmt.Errorf("unknown service command %q", args[0])
+}
+
+// setupSummary describes how the daemon runs for bug reports, without
+// anything personal such as host names or allowlisted numbers.
+func setupSummary(asService, send, useOAuth, public bool) string {
+	parts := []string{"foreground", "MCP read-only", "OAuth off", "local only"}
+	if asService {
+		parts[0] = "background service"
+	}
+	if send {
+		parts[1] = "MCP send on"
+	}
+	if useOAuth {
+		parts[2] = "OAuth on"
+	}
+	if public {
+		parts[3] = "public host"
+	}
+	return strings.Join(parts, ", ")
+}
+
+func cmdBug(args []string) error {
+	fs := flag.NewFlagSet("bug", flag.ExitOnError)
+	_ = fs.Parse(args)
+	info := about.New(version, "")
+	fmt.Printf("wamcp %s, %s, %s\nThe report is public: leave out phone numbers, names and message text.\n", info.Version, info.Platform, info.Go)
+	opener := "xdg-open"
+	if runtime.GOOS == "darwin" {
+		opener = "open"
+	}
+	if err := exec.Command(opener, info.BugURL).Start(); err != nil {
+		fmt.Println("Open this link:", info.BugURL)
+		return nil
+	}
+	fmt.Println("Opened", info.BugURL)
+	return nil
 }
 
 func cmdLogout(args []string) error {
