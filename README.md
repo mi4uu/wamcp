@@ -107,6 +107,18 @@ claude mcp add --transport http --scope user whatsapp http://127.0.0.1:8765/mcp 
 { "mcpServers": { "whatsapp": { "command": "/Users/you/.local/bin/wamcp", "args": ["mcp"] } } }
 ```
 
+### Remote access (claude.ai, phone)
+
+wamcp stays on `127.0.0.1`. Put a tunnel or reverse proxy with HTTPS in front of it (for example a Cloudflare Tunnel to `http://127.0.0.1:8765`) and tell wamcp the public name:
+
+```sh
+wamcp serve --public-host wa.example.com      # or: wamcp service install --public-host wa.example.com
+```
+
+Then add a custom connector in claude.ai with the URL `https://wa.example.com/mcp` and a request header `Authorization: Bearer <token>` (from `wamcp token`). Anthropic documents request headers for custom connectors; check that your plan shows the field. wamcp does not implement OAuth yet, so clients that only speak OAuth cannot connect.
+
+With `--public-host` the web client always asks for the token, and sending (if you turn it on) requires an allowlist.
+
 ## MCP tools
 
 | Tool | What it does |

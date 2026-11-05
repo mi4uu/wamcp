@@ -117,6 +117,19 @@ func TestHostCheckBlocksRebinding(t *testing.T) {
 	}
 }
 
+func TestPublicHostAllowed(t *testing.T) {
+	srv, _ := setup(t)
+	srv.s.opt.PublicHosts = []string{"wa.example.com"}
+	for host, want := range map[string]int{"wa.example.com": http.StatusOK, "WA.example.com:443": http.StatusOK, "evil.example": http.StatusForbidden} {
+		req := httptest.NewRequest("GET", "http://"+host+"/api/session", nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != want {
+			t.Errorf("Host %s: got %d, want %d", host, rec.Code, want)
+		}
+	}
+}
+
 func TestSessionFlow(t *testing.T) {
 	srv, d := setup(t)
 	if rec := do(srv, "GET", "/api/chats", "", nil); rec.Code != http.StatusUnauthorized {

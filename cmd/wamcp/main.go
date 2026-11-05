@@ -183,7 +183,7 @@ func (f *sendFlags) args() []string {
 }
 
 // outbox builds the send policy, or returns nil when sending is off.
-func (f *sendFlags) outbox(listen string, arc *archive.Store, mgr *wa.Manager, log *slog.Logger) (*outbox.Outbox, error) {
+func (f *sendFlags) outbox(exposed bool, arc *archive.Store, mgr *wa.Manager, log *slog.Logger) (*outbox.Outbox, error) {
 	if !f.allow {
 		return nil, nil
 	}
@@ -199,8 +199,8 @@ func (f *sendFlags) outbox(listen string, arc *archive.Store, mgr *wa.Manager, l
 	if err != nil {
 		return nil, fmt.Errorf("--mcp-send-to: %w", err)
 	}
-	if ob.AllowsAnyone() && !isLoopback(listen) {
-		return nil, errors.New("--mcp-allow-send on a non-loopback --listen address needs a recipient allowlist (--mcp-send-to)")
+	if ob.AllowsAnyone() && exposed {
+		return nil, errors.New("--mcp-allow-send with a non-loopback --listen or a --public-host needs a recipient allowlist (--mcp-send-to)")
 	}
 	return ob, nil
 }
@@ -375,6 +375,8 @@ func cmdServe(args []string) (retErr error) {
 	waLogLevel := fs.String("wa-log-level", "warn", "log level of the WhatsApp library")
 	logFile := fs.String("log-file", "", "write logs to this file instead of stderr")
 	deleted := fs.String("deleted", "keep", "messages deleted for everyone: keep (content stays, marked as deleted) or remove (wiped like in WhatsApp)")
+	publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"),
+		"comma-separated host names of a reverse proxy or tunnel in front of wamcp (for example wa.example.com); turns on token sign-in for the web client, env WAMCP_PUBLIC_HOST")
 	webAuth := fs.String("web-auth", "local", "web client sign-in: local (browsers on this machine are signed in automatically) or token")
 	asService := fs.Bool("service", false, "running under launchd (stop restarting after repeated startup failures)")
 	_ = fs.Parse(args)
@@ -432,13 +434,20 @@ func cmdServe(args []string) (retErr error) {
 		return err
 	}
 
-	ob, err := send.outbox(c.listen, arc, mgr, log)
+	var publicHosts []string
+	for _, h := range strings.Split(*publicHost, ",") {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			publicHosts = append(publicHosts, h)
+		}
+	}
+	exposed := !isLoopback(c.listen) || len(publicHosts) > 0
+	ob, err := send.outbox(exposed, arc, mgr, log)
 	if err != nil {
 		return err
 	}
 	var mcpOpts []mcpserver.Option
 	webOpts := web.Options{Token: token, Archive: arc, Daemon: mgr, Log: log,
-		AllowAnyHost: !isLoopback(c.listen), TrustLocal: *webAuth == "local" && isLoopback(c.listen)}
+		AllowAnyHost: !isLoopback(c.listen), PublicHosts: publicHosts, TrustLocal: *webAuth == "local" && !exposed}
 	if ob != nil {
 		mcpOpts = append(mcpOpts, mcpserver.WithSender(ob))
 		webOpts.AgentSend = ob
@@ -458,13 +467,13 @@ func cmdServe(args []string) (retErr error) {
 			stop()
 		}
 	}()
-	if !isLoopback(c.listen) {
-		log.Warn("listening on a non-loopback address; anyone who can reach it and has the token can read your WhatsApp", "listen", c.listen)
+	if exposed {
+		log.Warn("reachable beyond this machine; anyone who can reach it and has the token can read your WhatsApp", "listen", c.listen, "public_host", publicHosts)
 	}
 	log.Info("wamcp started", "version", version, "web", c.baseURL(), "mcp", c.baseURL()+"/mcp", "data", c.dataDir)
 	if interactive {
 		link := c.baseURL()
-		if *webAuth == "token" || !isLoopback(c.listen) {
+		if *webAuth == "token" || exposed {
 			link += "/login?code=" + webSrv.NewLoginCode()
 		}
 		fmt.Fprintf(os.Stderr, "\n  Web client:   %s\n  MCP endpoint: %s/mcp  (see `wamcp config`)\n\n", link, c.baseURL())
@@ -694,6 +703,7 @@ func cmdService(args []string) error {
 		autoMedia := fs.Bool("auto-media", false, "download media of new messages automatically")
 		var send sendFlags
 		send.register(fs)
+		publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"), "host names of a reverse proxy or tunnel in front of wamcp")
 		_ = fs.Parse(args[1:])
 		if send.allow {
 			if _, err := outbox.New(nil, outbox.Config{Allow: strings.Split(send.to, ",")}, nil, nil, nil); err != nil {
@@ -736,6 +746,9 @@ func cmdService(args []string) error {
 			serveArgs = append(serveArgs, "--auto-media")
 		}
 		serveArgs = append(serveArgs, send.args()...)
+		if *publicHost != "" {
+			serveArgs = append(serveArgs, "--public-host", *publicHost)
+		}
 		path, err := service.Install(serveArgs, filepath.Join(paths.Logs(), "launchd.log"))
 		if err != nil {
 			return err

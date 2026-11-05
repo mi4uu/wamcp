@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -71,6 +72,9 @@ type Options struct {
 	Daemon       Daemon
 	Log          *slog.Logger
 	AllowAnyHost bool // set when listening on a non-loopback address
+	// PublicHosts are extra Host header names accepted on a loopback
+	// listener, for a reverse proxy or tunnel in front of wamcp.
+	PublicHosts []string
 	// TrustLocal signs in every browser connecting from this machine, so the
 	// web client needs no token. /mcp always requires the bearer token.
 	TrustLocal bool
@@ -274,7 +278,7 @@ func (s *server) localOnly(next http.Handler) http.Handler {
 				host = h
 			}
 			host = strings.Trim(host, "[]")
-			if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			if host != "localhost" && host != "127.0.0.1" && host != "::1" && !slices.Contains(s.opt.PublicHosts, strings.ToLower(host)) {
 				http.Error(w, "forbidden host", http.StatusForbidden)
 				return
 			}

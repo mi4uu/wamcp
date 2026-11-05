@@ -19,17 +19,17 @@ import (
 
 func TestSendNeedsAllowlistOffLoopback(t *testing.T) {
 	f := sendFlags{allow: true}
-	if _, err := f.outbox("0.0.0.0:8765", nil, nil, nil); err == nil || !strings.Contains(err.Error(), "allowlist") {
+	if _, err := f.outbox(true, nil, nil, nil); err == nil || !strings.Contains(err.Error(), "allowlist") {
 		t.Fatalf("non-loopback without allowlist: want refusal, got %v", err)
 	}
 	f.to = "+48 600 000 101"
-	if ob, err := f.outbox("0.0.0.0:8765", nil, nil, nil); err != nil || ob == nil {
+	if ob, err := f.outbox(true, nil, nil, nil); err != nil || ob == nil {
 		t.Fatalf("non-loopback with allowlist: %v", err)
 	}
-	if ob, err := (&sendFlags{}).outbox("127.0.0.1:8765", nil, nil, nil); err != nil || ob != nil {
+	if ob, err := (&sendFlags{}).outbox(false, nil, nil, nil); err != nil || ob != nil {
 		t.Fatalf("switch off must give no outbox, got %v %v", ob, err)
 	}
-	if _, err := (&sendFlags{allow: true, to: "Anna"}).outbox("127.0.0.1:8765", nil, nil, nil); err == nil {
+	if _, err := (&sendFlags{allow: true, to: "Anna"}).outbox(false, nil, nil, nil); err == nil {
 		t.Fatal("names in the allowlist must be rejected")
 	}
 }
