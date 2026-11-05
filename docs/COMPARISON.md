@@ -7,7 +7,7 @@ As of 2026-11-05. Stars, last push and license come from the GitHub API on that 
 - **lharries/whatsapp-mcp** is the one everyone knows (6.8k stars). It works, it can send text, files and voice notes, and it has not had a commit since 2025-07-13. Its Go bridge serves an unauthenticated REST API on all interfaces, sends are on with no allowlist, there are no tests.
 - **delltrak/wamcp** is the most feature-rich: 169 tools, Baileys or the official Cloud API, OAuth 2.1, Postgres, a real test suite and CI. It needs Node 24, Redis and Docker, sends by default, keeps messages 30 days by default, ships no LICENSE file, and uses the same name as this project.
 - **finereli/whatsapp-mcp** and **felipeadeildo/whatsapp-mcp** run on Cloudflare Workers with OAuth, so they plug into claude.ai with one click. Your messages then live in a Cloudflare account (yours or, for finereli's hosted beta, the operator's).
-- **wamcp** is one Go binary that keeps your whole WhatsApp history on your own disk with full-text search, is read-only by default and can send only when you switch it on, with an allowlist, a rate limit, retry de-duplication and an audit log. It has no OAuth and no MCP media sending yet, and nobody has starred it yet.
+- **wamcp** is one Go binary that keeps your whole WhatsApp history on your own disk with full-text search, is read-only by default and can send only when you switch it on, with an allowlist, a rate limit, retry de-duplication and an audit log. Remote clients sign in with an MCP-only token or, opt-in, OAuth 2.1. It has no MCP media sending yet, and nobody has starred it yet.
 
 ## Table
 
@@ -19,7 +19,7 @@ As of 2026-11-05. Stars, last push and license come from the GitHub API on that 
 | To install | Go 1.26, `make install`; one binary, no cgo | Go, Python 3.11+, uv; cgo on Windows | Node 24+, Redis; Docker Compose recommended |
 | MCP tools | 13 read tools, plus `send_message` when switched on | 12 (3 send) | 169, plus 3 opt-in |
 | Transports | stdio, streamable HTTP | stdio | stdio, streamable HTTP |
-| Auth on HTTP | bearer token, always on | no MCP HTTP; bridge REST on `:8080` has no auth | none unless configured; API key, Basic or OAuth 2.1 |
+| Auth on HTTP | token always on (MCP-only token or main token); OAuth 2.1 with PKCE opt-in | no MCP HTTP; bridge REST on `:8080` has no auth | none unless configured; API key, Basic or OAuth 2.1 |
 | Sends by default | no | yes | yes |
 | Send safeguards | opt-in switch, allowlist, hourly limit, idempotency, audit table | none | queue rate limit per channel, group writes gated off |
 | Message history | everything, kept forever, deletes and edits kept | stored in SQLite | 30 days by default (`WA_MESSAGE_RETENTION_DAYS`) |
@@ -68,11 +68,12 @@ Fixed on branch `feat/opt-in-send`:
 5. **No CI (low).** Added a workflow: gofmt, vet, staticcheck, race tests on Linux and macOS.
 6. **One token did everything (medium).** The MCP token also signed in to the web client, which can send without the policy. Added a separate MCP-only token (`wamcp token --mcp`, `--rotate-mcp`); `wamcp config` prints it.
 
+7. **No OAuth (high for remote use).** Clients that only speak OAuth could not connect. Added an opt-in OAuth 2.1 server (`--oauth`): metadata discovery, dynamic client registration, authorization code with S256 PKCE, rotating refresh tokens, owner approval with the main token, `wamcp oauth list|revoke`.
+
 Still open, in order of impact:
 
-1. **No OAuth.** claude.ai custom connectors can take a static `Authorization` request header (Anthropic documents it; availability depends on the plan), but clients that only speak OAuth cannot connect. finereli, felipeadeildo and delltrak have OAuth. This is the biggest gap for remote use.
-2. **No prebuilt binaries.** Installing needs Go 1.26. Release binaries for macOS and Linux would make "one binary" true for people without Go.
-3. **Background service is macOS only.** Linux users write their own systemd unit.
-4. **No MCP media sending.** lharries and delltrak can send files and voice notes.
-5. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
-6. **Fewer tools than delltrak.** 13 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.
+1. **No prebuilt binaries.** Installing needs Go 1.26. Release binaries for macOS and Linux would make "one binary" true for people without Go.
+2. **Background service is macOS only.** Linux users write their own systemd unit.
+3. **No MCP media sending.** lharries and delltrak can send files and voice notes.
+4. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
+5. **Fewer tools than delltrak.** 13 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.

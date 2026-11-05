@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/mi4uu/wamcp/internal/archive"
+	"github.com/mi4uu/wamcp/internal/oauth"
 	"github.com/mi4uu/wamcp/internal/outbox"
 	"github.com/mi4uu/wamcp/internal/wa"
 )
@@ -85,6 +86,9 @@ type Options struct {
 	// AgentSend is set when the daemon runs with --mcp-allow-send; it serves
 	// send_message for stdio MCP servers.
 	AgentSend AgentSender
+	// OAuth is set when the daemon runs with --oauth. Its access tokens open
+	// what the MCP token opens.
+	OAuth *oauth.Handler
 }
 
 const cookieName = "wamcp_session"
@@ -198,6 +202,12 @@ func Handler(opt Options) *Server {
 		streams: map[string]int{}, goneTimers: map[string]*time.Timer{}}
 
 	mux := http.NewServeMux()
+	if opt.OAuth != nil {
+		opt.OAuth.Base = s.baseURL
+		opt.OAuth.Register(mux)
+		mux.Handle("GET /api/oauth/clients", s.bearer(http.HandlerFunc(s.apiOAuthClients)))
+		mux.Handle("POST /api/oauth/revoke", s.bearer(http.HandlerFunc(s.apiOAuthRevoke)))
+	}
 	if opt.MCP != nil {
 		mux.Handle("/mcp", s.agentBearer(opt.MCP))
 	}
@@ -296,6 +306,39 @@ func (s *server) localOnly(next http.Handler) http.Handler {
 
 func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 
+// baseURL is the origin clients see: https for a --public-host (TLS ends at
+// the proxy), otherwise what the request came in on.
+func (s *server) baseURL(r *http.Request) string {
+	host := strings.ToLower(r.Host)
+	name := host
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		name = h
+	}
+	if slices.Contains(s.opt.PublicHosts, name) || (s.opt.AllowAnyHost && r.Header.Get("X-Forwarded-Proto") == "https") {
+		return "https://" + host
+	}
+	return "http://" + host
+}
+
+func (s *server) apiOAuthClients(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, s.opt.OAuth.S.Clients())
+}
+
+func (s *server) apiOAuthRevoke(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		ID string `json:"id"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.opt.OAuth.S.Revoke(in.ID); err != nil {
+		writeError(w, http.StatusNotFound, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
 // bearer accepts only the full-access token.
 func (s *server) bearer(next http.Handler) http.Handler { return s.requireBearer(next, false) }
 
@@ -306,9 +349,14 @@ func (s *server) requireBearer(next http.Handler, agent bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
 		got = strings.TrimSpace(got)
-		valid := ok && (equal(got, s.opt.Token) || (agent && s.opt.MCPToken != "" && equal(got, s.opt.MCPToken)))
+		valid := ok && (equal(got, s.opt.Token) || (agent && s.opt.MCPToken != "" && equal(got, s.opt.MCPToken)) ||
+			(agent && s.opt.OAuth != nil && s.opt.OAuth.S.Valid(got)))
 		if !valid {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="wamcp"`)
+			challenge := `Bearer realm="wamcp"`
+			if agent && s.opt.OAuth != nil {
+				challenge += `, resource_metadata="` + s.opt.OAuth.ResourceMetadataURL(r) + `"`
+			}
+			w.Header().Set("WWW-Authenticate", challenge)
 			http.Error(w, "missing or invalid bearer token (see `wamcp config`)", http.StatusUnauthorized)
 			return
 		}
