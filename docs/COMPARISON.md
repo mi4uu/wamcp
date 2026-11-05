@@ -71,8 +71,8 @@ Fixed since the first public version:
 8. **Background service was macOS only (medium).** `whatsupd service` now writes a systemd user unit on Linux, tested on Debian trixie.
 9. **No MCP media sending (medium).** Added `send_file`: photos, videos, audio, voice notes and documents under the same policy. Paths are refused unless `--mcp-send-files-from` names a directory, and never leave it.
 10. **No prebuilt binaries (medium).** Installing needed Go 1.26. Each release now has static binaries for macOS and Linux, .deb, .rpm and Arch packages, and SHA256SUMS; CI installs every package.
+11. **`internal/wa` had no tests (medium).** Tests now cover the ack-after-commit path, redelivery, catch-up, auto-media, state events and media paths. Writing them found two bugs, both fixed: a redelivered message counted as unread twice, and a chat ID of ".." could put media outside the media directory.
 
 Still open, in order of impact:
 
-1. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
-2. **Fewer tools than delltrak.** 15 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.
+1. **Fewer tools than delltrak.** 15 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.
