@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"unicode"
 )
 
@@ -85,7 +86,7 @@ func (o *Outbox) resolve(ctx context.Context, f File) (File, error) {
 		if m.MediaPath == "" {
 			return File{}, fmt.Errorf("the attachment of message %s is not downloaded yet; call download_media first", f.ForwardID)
 		}
-		data, err := readLimited(m.MediaPath, o.maxFile)
+		data, err := readLimited(m.MediaPath, o.maxFile, 0)
 		if err != nil {
 			return File{}, err
 		}
@@ -133,12 +134,13 @@ func (o *Outbox) readPath(p string) ([]byte, string, error) {
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return nil, "", fmt.Errorf("path %s is outside %s, the only directory files may be sent from", p, o.filesDir)
 	}
-	data, err := readLimited(real, o.maxFile)
+	// O_NOFOLLOW: a symlink swapped in after the check is refused, not followed.
+	data, err := readLimited(real, o.maxFile, syscall.O_NOFOLLOW)
 	return data, filepath.Base(real), err
 }
 
-func readLimited(path string, max int64) ([]byte, error) {
-	f, err := os.Open(path)
+func readLimited(path string, max int64, flags int) ([]byte, error) {
+	f, err := os.OpenFile(path, os.O_RDONLY|flags, 0)
 	if err != nil {
 		return nil, err
 	}
