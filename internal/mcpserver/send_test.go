@@ -177,3 +177,21 @@ func TestSendFileTool(t *testing.T) {
 		t.Fatalf("path without a files directory was not refused: %+v", res.Content)
 	}
 }
+
+func TestSendFileRefusesOversizedDataBeforeDecoding(t *testing.T) {
+	store := seeded(t)
+	wa := &countingWA{}
+	ob, err := outbox.New(store, outbox.Config{Allow: []string{"me"}}, wa.send, wa.id, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Called directly: the in-memory transport caps frames at 16 MB, below
+	// what the tool must refuse on the HTTP transport.
+	s := &server{arc: store, loc: time.Local, now: time.Now, sender: ob.WithFiles(wa.sendFile)}
+	limit := base64.StdEncoding.EncodedLen(outbox.DefaultMaxFileBytes)
+	huge := strings.Repeat("A", limit+limit/38+68)
+	_, _, err = s.sendFileTool(context.Background(), nil, sendFileIn{Chat: "me", FileName: "big.bin", DataBase64: huge})
+	if err == nil || !strings.Contains(err.Error(), "file limit") || wa.sent != 0 {
+		t.Fatalf("oversized data: %v, sent %d", err, wa.sent)
+	}
+}

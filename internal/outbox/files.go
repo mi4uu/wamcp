@@ -1,6 +1,7 @@
 package outbox
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"syscall"
 	"unicode"
+
+	"golang.org/x/sys/unix"
 )
 
 // File is an attachment for SendFile. Exactly one of Data, Path or
@@ -36,19 +39,24 @@ type File struct {
 	AsDocument bool `json:",omitempty"`
 }
 
-func resolveDir(dir string) (string, error) {
-	abs, err := filepath.Abs(dir)
-	if err != nil {
-		return "", err
+// openDir opens the files directory once. Paths are then opened relative to
+// this handle, one component at a time, so moving or replacing anything
+// above or inside it cannot redirect a read outside.
+func openDir(dir string) (abs, real string, fd *os.File, err error) {
+	if abs, err = filepath.Abs(dir); err != nil {
+		return "", "", nil, err
 	}
-	real, err := filepath.EvalSymlinks(abs)
-	if err != nil {
-		return "", fmt.Errorf("files directory: %w", err)
+	if real, err = filepath.EvalSymlinks(abs); err != nil {
+		return "", "", nil, fmt.Errorf("files directory: %w", err)
 	}
-	if fi, err := os.Stat(real); err != nil || !fi.IsDir() {
-		return "", fmt.Errorf("files directory %s is not a directory", dir)
+	if fd, err = os.Open(real); err != nil {
+		return "", "", nil, fmt.Errorf("files directory: %w", err)
 	}
-	return real, nil
+	if fi, err := fd.Stat(); err != nil || !fi.IsDir() {
+		fd.Close()
+		return "", "", nil, fmt.Errorf("files directory %s is not a directory", dir)
+	}
+	return abs, real, fd, nil
 }
 
 // resolve loads the content of f and fills in its name and type.
@@ -86,7 +94,11 @@ func (o *Outbox) resolve(ctx context.Context, f File) (File, error) {
 		if m.MediaPath == "" {
 			return File{}, fmt.Errorf("the attachment of message %s is not downloaded yet; call download_media first", f.ForwardID)
 		}
-		data, err := readLimited(m.MediaPath, o.maxFile, 0)
+		mf, err := os.OpenFile(m.MediaPath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+		if err != nil {
+			return File{}, err
+		}
+		data, err := readAll(mf, o.maxFile)
 		if err != nil {
 			return File{}, err
 		}
@@ -112,38 +124,75 @@ func (o *Outbox) resolve(ctx context.Context, f File) (File, error) {
 	if f.MimeType == "" {
 		f.MimeType = http.DetectContentType(f.Data)
 	}
-	base, _, _ := strings.Cut(f.MimeType, ";")
-	if f.Voice && strings.TrimSpace(base) != "audio/ogg" {
-		return File{}, fmt.Errorf("voice notes must be audio/ogg with Opus, got %s; send it without voice to deliver it as an audio file", f.MimeType)
+	if f.Voice {
+		// Checked on the content: a wrong type from the caller would make
+		// WhatsApp show a voice note that does not play.
+		if !bytes.HasPrefix(f.Data, []byte("OggS")) {
+			return File{}, errors.New("voice notes must be Ogg Opus audio; send it without voice_note to deliver it as an audio file")
+		}
+		f.MimeType = "audio/ogg; codecs=opus"
 	}
 	return f, nil
 }
 
 func (o *Outbox) readPath(p string) ([]byte, string, error) {
-	if o.filesDir == "" {
+	if o.filesFD == nil {
 		return nil, "", errors.New("sending files by path is off; pass the file as data, or start wamcp with --mcp-send-files-from DIR")
 	}
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(o.filesDir, p)
+	outside := fmt.Errorf("path %s is outside %s, the only directory files may be sent from", p, o.filesDir)
+	rel := filepath.Clean(p)
+	if filepath.IsAbs(rel) {
+		// Only to find the path relative to the directory; the open below
+		// still refuses every symlink. The parent is resolved for aliases
+		// such as /var and /private/var on macOS.
+		candidates := []string{filepath.Clean(p)}
+		if parent, err := filepath.EvalSymlinks(filepath.Dir(p)); err == nil {
+			candidates = append(candidates, filepath.Join(parent, filepath.Base(p)))
+		}
+		rel = ""
+	find:
+		for _, c := range candidates {
+			for _, base := range []string{o.filesDir, o.filesAbs} {
+				if r, err := filepath.Rel(base, c); err == nil && filepath.IsLocal(r) {
+					rel = r
+					break find
+				}
+			}
+		}
 	}
-	real, err := filepath.EvalSymlinks(filepath.Clean(p))
-	if err != nil {
-		return nil, "", fmt.Errorf("path: %w", err)
+	if rel == "" || !filepath.IsLocal(rel) {
+		return nil, "", outside
 	}
-	rel, err := filepath.Rel(o.filesDir, real)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return nil, "", fmt.Errorf("path %s is outside %s, the only directory files may be sent from", p, o.filesDir)
+	parts := strings.Split(rel, string(filepath.Separator))
+	dir := int(o.filesFD.Fd())
+	for i, part := range parts {
+		// O_NOFOLLOW on every component: no symlink is followed, at any
+		// depth. O_NONBLOCK: opening a FIFO must not hang the daemon.
+		flags := unix.O_RDONLY | unix.O_NOFOLLOW | unix.O_CLOEXEC | unix.O_NONBLOCK
+		if i < len(parts)-1 {
+			flags |= unix.O_DIRECTORY
+		}
+		fd, err := unix.Openat(dir, part, flags, 0)
+		var st unix.Stat_t
+		symlink := err != nil && unix.Fstatat(dir, part, &st, unix.AT_SYMLINK_NOFOLLOW) == nil && st.Mode&unix.S_IFMT == unix.S_IFLNK
+		if dir != int(o.filesFD.Fd()) {
+			unix.Close(dir)
+		}
+		if symlink {
+			return nil, "", fmt.Errorf("path %s goes through a symlink; symlinks are not followed", p)
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("path %s: %w", p, err)
+		}
+		dir = fd
 	}
-	// O_NOFOLLOW: a symlink swapped in after the check is refused, not followed.
-	data, err := readLimited(real, o.maxFile, syscall.O_NOFOLLOW)
-	return data, filepath.Base(real), err
+	data, err := readAll(os.NewFile(uintptr(dir), p), o.maxFile)
+	return data, parts[len(parts)-1], err
 }
 
-func readLimited(path string, max int64, flags int) ([]byte, error) {
-	f, err := os.OpenFile(path, os.O_RDONLY|flags, 0)
-	if err != nil {
-		return nil, err
-	}
+// readAll reads a regular file of at most max bytes and closes it.
+func readAll(f *os.File, max int64) ([]byte, error) {
+	path := f.Name()
 	defer f.Close()
 	fi, err := f.Stat()
 	if err != nil {

@@ -567,7 +567,7 @@ func cmdMCP(args []string) error {
 		log.Warn("send_message is not offered: no access token yet; start the daemon first")
 	}
 	srv := mcpserver.New(arc, live, version, opts...)
-	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && ctx.Err() == nil {
+	if err := srv.Run(ctx, &mcp.StdioTransport{MaxLineLength: web.MaxMCPBody}); err != nil && ctx.Err() == nil {
 		log.Error("mcp stdio", "err", err)
 		return err
 	}

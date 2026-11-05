@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
@@ -86,5 +87,24 @@ func TestLiveSendWithSwitch(t *testing.T) {
 	}
 	if d.sent != nil {
 		t.Fatalf("live send must go through the policy, not the daemon directly: %v", d.sent)
+	}
+}
+
+func TestMCPBodyIsCapped(t *testing.T) {
+	base, d := setup(t)
+	reader := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+			return
+		}
+		w.Write([]byte("ok"))
+	})
+	srv := Handler(Options{Token: testToken, MCP: reader, Archive: base.s.opt.Archive, Daemon: d})
+	auth := map[string]string{"Authorization": "Bearer " + testToken}
+	if rec := do(srv, "POST", "/mcp", strings.Repeat("x", 1<<20), auth); rec.Code != http.StatusOK {
+		t.Fatalf("1 MB body: %d", rec.Code)
+	}
+	if rec := do(srv, "POST", "/mcp", strings.Repeat("x", MaxMCPBody+1), auth); rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("body over the cap: %d", rec.Code)
 	}
 }

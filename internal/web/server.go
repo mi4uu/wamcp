@@ -92,6 +92,10 @@ type Options struct {
 	OAuth *oauth.Handler
 }
 
+// MaxMCPBody caps one MCP request: room for a base64 file at the send_file
+// limit, far below what would strain the daemon.
+const MaxMCPBody = outbox.DefaultMaxFileBytes/3*4 + 1<<20
+
 const cookieName = "wamcp_session"
 
 type server struct {
@@ -210,7 +214,7 @@ func Handler(opt Options) *Server {
 		mux.Handle("POST /api/oauth/revoke", s.bearer(http.HandlerFunc(s.apiOAuthRevoke)))
 	}
 	if opt.MCP != nil {
-		mux.Handle("/mcp", s.agentBearer(opt.MCP))
+		mux.Handle("/mcp", s.agentBearer(http.MaxBytesHandler(opt.MCP, MaxMCPBody)))
 	}
 	static, _ := fs.Sub(staticFS, "static")
 	files := http.FileServerFS(static)

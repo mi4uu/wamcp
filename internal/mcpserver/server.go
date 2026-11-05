@@ -1159,6 +1159,11 @@ func (s *server) sendFileTool(ctx context.Context, req *mcp.CallToolRequest, in 
 	f := &outbox.File{Path: in.Path, Name: in.FileName, MimeType: in.MimeType, Voice: in.VoiceNote, AsDocument: in.AsDocument,
 		ForwardID: in.ForwardMessageID}
 	if in.DataBase64 != "" {
+		// Refuse before decoding: the outbox limit applies only after the
+		// whole file would already be in memory twice.
+		if limit := base64.StdEncoding.EncodedLen(outbox.DefaultMaxFileBytes); len(in.DataBase64) > limit+limit/38+64 {
+			return nil, nil, fmt.Errorf("data_base64 is over the %d MB file limit", outbox.DefaultMaxFileBytes>>20)
+		}
 		if f.Data, err = base64.StdEncoding.DecodeString(strings.TrimSpace(in.DataBase64)); err != nil {
 			return nil, nil, fmt.Errorf("data_base64 is not valid base64: %w", err)
 		}

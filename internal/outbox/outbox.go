@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -98,7 +99,9 @@ type Outbox struct {
 	allowSelf bool
 	perHour   int
 	window    time.Duration
-	filesDir  string
+	filesDir  string // resolved, for messages and matching absolute paths
+	filesAbs  string // as configured, made absolute
+	filesFD   *os.File
 	maxFile   int64
 
 	mu sync.Mutex
@@ -119,11 +122,11 @@ func New(arc *archive.Store, cfg Config, send SendFunc, newID func() string, log
 		o.maxFile = DefaultMaxFileBytes
 	}
 	if cfg.FilesDir != "" {
-		dir, err := resolveDir(cfg.FilesDir)
+		abs, dir, fd, err := openDir(cfg.FilesDir)
 		if err != nil {
 			return nil, err
 		}
-		o.filesDir = dir
+		o.filesAbs, o.filesDir, o.filesFD = abs, dir, fd
 	}
 	for _, raw := range cfg.Allow {
 		raw = strings.TrimSpace(raw)
