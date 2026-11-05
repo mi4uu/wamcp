@@ -41,6 +41,7 @@ type Paths struct{ Dir string }
 
 func (p Paths) Archive() string  { return filepath.Join(p.Dir, "archive.db") }
 func (p Paths) Token() string    { return filepath.Join(p.Dir, "token") }
+func (p Paths) MCPToken() string { return filepath.Join(p.Dir, "mcp-token") }
 func (p Paths) LockFile() string { return filepath.Join(p.Dir, "wamcp.lock") }
 func (p Paths) Logs() string     { return filepath.Join(p.Dir, "logs") }
 
@@ -53,24 +54,46 @@ func (p Paths) Ensure() error {
 }
 
 // LoadOrCreateToken returns the access token, generating it on first use.
-func (p Paths) LoadOrCreateToken() (string, error) {
-	if tok, err := p.ReadToken(); err == nil {
+func (p Paths) LoadOrCreateToken() (string, error) { return loadOrCreate(p.Token()) }
+
+// ReadToken returns the stored access token.
+func (p Paths) ReadToken() (string, error) { return readToken(p.Token()) }
+
+// LoadOrCreateMCPToken returns the token that only grants MCP access,
+// generating it on first use.
+func (p Paths) LoadOrCreateMCPToken() (string, error) { return loadOrCreate(p.MCPToken()) }
+
+// ReadMCPToken returns the stored MCP-only token.
+func (p Paths) ReadMCPToken() (string, error) { return readToken(p.MCPToken()) }
+
+// RotateMCPToken replaces the MCP-only token with a new one.
+func (p Paths) RotateMCPToken() (string, error) { return writeNewToken(p.MCPToken()) }
+
+func loadOrCreate(path string) (string, error) {
+	if tok, err := readToken(path); err == nil {
 		return tok, nil
 	}
+	return writeNewToken(path)
+}
+
+func writeNewToken(path string) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
 	}
 	tok := hex.EncodeToString(b)
-	if err := os.WriteFile(p.Token(), []byte(tok+"\n"), 0o600); err != nil {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(tok+"\n"), 0o600); err != nil {
+		return "", err
+	}
+	if err := os.Rename(tmp, path); err != nil {
 		return "", err
 	}
 	return tok, nil
 }
 
-// ReadToken returns the stored access token.
-func (p Paths) ReadToken() (string, error) {
-	raw, err := os.ReadFile(p.Token())
+func readToken(path string) (string, error) {
+	raw, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}

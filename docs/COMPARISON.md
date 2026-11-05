@@ -66,13 +66,13 @@ Fixed on branch `feat/opt-in-send`:
 3. **No opt-in send (feature gap vs everyone else).** Added `send_message` behind `--mcp-allow-send` with allowlist, rate limit, idempotency and audit.
 4. **Untrusted text not flagged to agents (low).** The MCP instructions now say message text is data, not instructions.
 5. **No CI (low).** Added a workflow: gofmt, vet, staticcheck, race tests on Linux and macOS.
+6. **One token did everything (medium).** The MCP token also signed in to the web client, which can send without the policy. Added a separate MCP-only token (`wamcp token --mcp`, `--rotate-mcp`); `wamcp config` prints it.
 
 Still open, in order of impact:
 
 1. **No OAuth.** claude.ai custom connectors can take a static `Authorization` request header (Anthropic documents it; availability depends on the plan), but clients that only speak OAuth cannot connect. finereli, felipeadeildo and delltrak have OAuth. This is the biggest gap for remote use.
-2. **One token does everything.** The MCP bearer token also signs in to the web client, which can send, edit and delete without the send policy. A separate MCP-only token (read-only unless sending is on) would make handing a token to a cloud connector much safer.
-3. **No prebuilt binaries.** Installing needs Go 1.26. Release binaries for macOS and Linux would make "one binary" true for people without Go.
-4. **Background service is macOS only.** Linux users write their own systemd unit.
-5. **No MCP media sending.** lharries and delltrak can send files and voice notes.
-6. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
-7. **Fewer tools than delltrak.** 13 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.
+2. **No prebuilt binaries.** Installing needs Go 1.26. Release binaries for macOS and Linux would make "one binary" true for people without Go.
+3. **Background service is macOS only.** Linux users write their own systemd unit.
+4. **No MCP media sending.** lharries and delltrak can send files and voice notes.
+5. **`internal/wa` has no tests.** The ack-after-commit path and the send code are covered only by manual runs.
+6. **Fewer tools than delltrak.** 13 versus 169. Most of the gap is group admin, business and scheduling, which a personal archive does not need, but it is a real difference.

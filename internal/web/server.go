@@ -67,7 +67,10 @@ type AgentSender interface {
 
 // Options configures the HTTP handler.
 type Options struct {
-	Token        string       // bearer token for /mcp and the web login
+	Token string // full-access token: web login, /mcp and the live API
+	// MCPToken also opens /mcp and the live API used by stdio servers, but
+	// cannot sign in to the web client. Empty disables it.
+	MCPToken     string
 	MCP          http.Handler // streamable HTTP MCP handler
 	Archive      *archive.Store
 	Daemon       Daemon
@@ -196,7 +199,7 @@ func Handler(opt Options) *Server {
 
 	mux := http.NewServeMux()
 	if opt.MCP != nil {
-		mux.Handle("/mcp", s.bearer(opt.MCP))
+		mux.Handle("/mcp", s.agentBearer(opt.MCP))
 	}
 	static, _ := fs.Sub(staticFS, "static")
 	files := http.FileServerFS(static)
@@ -220,11 +223,11 @@ func Handler(opt Options) *Server {
 	mux.HandleFunc("GET /login", s.loginWithCode)
 	mux.Handle("POST /api/login-code", s.bearer(http.HandlerFunc(s.apiLoginCode)))
 	// Live operations for the stdio MCP server (bearer token).
-	mux.Handle("GET /api/live/status", s.bearer(http.HandlerFunc(s.apiLiveStatus)))
-	mux.Handle("POST /api/live/media", s.bearer(http.HandlerFunc(s.apiLiveMedia)))
-	mux.Handle("POST /api/live/older", s.bearer(http.HandlerFunc(s.apiLiveOlder)))
-	mux.Handle("GET /api/live/send", s.bearer(http.HandlerFunc(s.apiLiveSendPolicy)))
-	mux.Handle("POST /api/live/send", s.bearer(http.HandlerFunc(s.apiLiveSend)))
+	mux.Handle("GET /api/live/status", s.agentBearer(http.HandlerFunc(s.apiLiveStatus)))
+	mux.Handle("POST /api/live/media", s.agentBearer(http.HandlerFunc(s.apiLiveMedia)))
+	mux.Handle("POST /api/live/older", s.agentBearer(http.HandlerFunc(s.apiLiveOlder)))
+	mux.Handle("GET /api/live/send", s.agentBearer(http.HandlerFunc(s.apiLiveSendPolicy)))
+	mux.Handle("POST /api/live/send", s.agentBearer(http.HandlerFunc(s.apiLiveSend)))
 
 	// Signed in.
 	auth := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireSession(h)) }
@@ -293,10 +296,18 @@ func (s *server) localOnly(next http.Handler) http.Handler {
 
 func equal(a, b string) bool { return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1 }
 
-func (s *server) bearer(next http.Handler) http.Handler {
+// bearer accepts only the full-access token.
+func (s *server) bearer(next http.Handler) http.Handler { return s.requireBearer(next, false) }
+
+// agentBearer accepts the full-access token or the MCP-only token.
+func (s *server) agentBearer(next http.Handler) http.Handler { return s.requireBearer(next, true) }
+
+func (s *server) requireBearer(next http.Handler, agent bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if !ok || !equal(strings.TrimSpace(got), s.opt.Token) {
+		got = strings.TrimSpace(got)
+		valid := ok && (equal(got, s.opt.Token) || (agent && s.opt.MCPToken != "" && equal(got, s.opt.MCPToken)))
+		if !valid {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="wamcp"`)
 			http.Error(w, "missing or invalid bearer token (see `wamcp config`)", http.StatusUnauthorized)
 			return

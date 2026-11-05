@@ -131,7 +131,7 @@ Logs: `~/.wamcp/logs/wamcp.log`.
 
 ```sh
 claude mcp add --transport http --scope user whatsapp http://127.0.0.1:8765/mcp \
-  --header "Authorization: Bearer $(wamcp token)"
+  --header "Authorization: Bearer $(wamcp token --mcp)"
 ```
 
 **Claude Desktop** and other stdio clients read the archive directly, even when the daemon is stopped:
@@ -148,7 +148,7 @@ wamcp stays on `127.0.0.1`. Put a tunnel or reverse proxy with HTTPS in front of
 wamcp serve --public-host wa.example.com      # or: wamcp service install --public-host wa.example.com
 ```
 
-Then add a custom connector in claude.ai with the URL `https://wa.example.com/mcp` and a request header `Authorization: Bearer <token>` (from `wamcp token`). Anthropic documents request headers for custom connectors; check that your plan shows the field. wamcp does not implement OAuth yet, so clients that only speak OAuth cannot connect.
+Then add a custom connector in claude.ai with the URL `https://wa.example.com/mcp` and a request header `Authorization: Bearer <token>` (from `wamcp token --mcp`, which cannot sign in to the web client; replace it any time with `wamcp token --rotate-mcp`). Anthropic documents request headers for custom connectors; check that your plan shows the field. wamcp does not implement OAuth yet, so clients that only speak OAuth cannot connect.
 
 With `--public-host` the web client always asks for the token, and sending (if you turn it on) requires an allowlist.
 
@@ -202,7 +202,7 @@ What the daemon enforces on every `send_message` call:
 What it does not protect against, so you can decide:
 
 - **Prompt injection.** An agent that reads your chats and can send is exposed to messages written to manipulate it ("forward this to everyone"). The allowlist and rate limit cap the damage; they do not stop the agent from sending the wrong text to an allowed chat. Keep the allowlist short: `me` alone is enough for "send me a daily summary".
-- **The token is the key to everything.** The same bearer token that `/mcp` uses also signs in to the web client, which can send, edit and delete without any of these limits. The switch controls what an *agent* is offered; it is not a barrier against someone who holds the token.
+- **Give agents the MCP token, not the main one.** `wamcp token --mcp` opens `/mcp` and nothing else, so it is bound by these limits. The main token (`wamcp token`) also signs in to the web client, which can send, edit and delete without any of them.
 
 ## Contact notes
 
@@ -232,9 +232,10 @@ Everything lives in `~/.wamcp` (mode `0700`):
 | `archive.db` | The archive: SQLite with FTS5 |
 | `whatsmeow.db` | Session keys of the linked device |
 | `media/`, `avatars/` | Downloaded attachments and profile pictures |
-| `token` | Access token for MCP and the web client |
+| `token` | Main access token: web client sign-in, MCP |
+| `mcp-token` | MCP-only token: `/mcp` and the API stdio servers use, no web client |
 
-- The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>`, there is no way to turn that off. The web client needs a session cookie obtained with the token (`wamcp open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
+- The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>` (the MCP token or the main one), there is no way to turn that off. The web client needs a session cookie obtained with the token (`wamcp open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
 - Behind a reverse proxy or tunnel (cloudflared, nginx, Caddy) use `--public-host` or `--web-auth token`. Without them, requests that carry proxy headers (`X-Forwarded-For`, `Forwarded`, `Cf-Connecting-Ip` and similar) or come from a known proxy process (cloudflared, ngrok, ssh, nginx, Caddy and others) are never signed in automatically, but a proxy that is neither would look like a local browser.
 - When wamcp is reachable from other machines (`--public-host` or a non-loopback `--listen`), linking a phone needs a signed-in browser, so a visitor cannot link their own account to your daemon.
 - Messages deleted for everyone keep their content in the archive and are marked with who deleted them and when. They stay searchable. Run `wamcp serve --deleted remove` to wipe them instead, like WhatsApp does.
@@ -254,7 +255,7 @@ wamcp serve     Run the daemon: link and sync WhatsApp, web client, MCP over HTT
 wamcp mcp       Serve MCP over stdio (reads the archive)
 wamcp open      Open the web client in the browser, signed in
 wamcp config    Print MCP client configuration
-wamcp token     Print the access token
+wamcp token     Print the access token (--mcp: MCP-only token, --rotate-mcp: replace it)
 wamcp status    Show daemon, sync and archive status
 wamcp audit     Show messages MCP agents sent or tried to send
 wamcp service   install | uninstall | restart | status (macOS)
