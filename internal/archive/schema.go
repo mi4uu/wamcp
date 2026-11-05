@@ -151,4 +151,20 @@ CREATE INDEX message_edits_msg ON message_edits (chat_jid, message_id, replaced_
 	// read) rather than only counted from live messages.
 	`ALTER TABLE chats ADD COLUMN unread_known INTEGER NOT NULL DEFAULT 0;
 UPDATE chats SET unread_known = 1 WHERE unread_count IS NOT NULL;`,
+	// v5: audit log of messages agents asked to send over MCP.
+	`CREATE TABLE agent_sends (
+	pk         INTEGER PRIMARY KEY,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL,
+	dedupe_key TEXT NOT NULL,
+	chat_jid   TEXT NOT NULL,
+	text       TEXT NOT NULL,
+	reply_to   TEXT NOT NULL DEFAULT '',
+	client     TEXT NOT NULL DEFAULT '',
+	status     TEXT NOT NULL, -- pending, sent, failed, refused
+	message_id TEXT NOT NULL DEFAULT '',
+	error      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX agent_sends_key ON agent_sends (dedupe_key, created_at);
+CREATE INDEX agent_sends_time ON agent_sends (created_at);`,
 }

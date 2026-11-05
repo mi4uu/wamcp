@@ -30,6 +30,7 @@ import (
 	"github.com/mi4uu/wamcp/internal/archive"
 	"github.com/mi4uu/wamcp/internal/config"
 	"github.com/mi4uu/wamcp/internal/mcpserver"
+	"github.com/mi4uu/wamcp/internal/outbox"
 	"github.com/mi4uu/wamcp/internal/service"
 	"github.com/mi4uu/wamcp/internal/wa"
 	"github.com/mi4uu/wamcp/internal/web"
@@ -46,6 +47,7 @@ Usage:
   wamcp config    Print MCP client configuration (Claude Code, Claude Desktop)
   wamcp token     Print the access token
   wamcp status    Show daemon, sync and archive status
+  wamcp audit     Show messages MCP agents sent or tried to send
   wamcp service   install | uninstall | restart | status — run the daemon in the background (macOS)
   wamcp logout    Unlink this device from WhatsApp (daemon must be stopped)
   wamcp version
@@ -75,6 +77,8 @@ func main() {
 		err = cmdToken(args)
 	case "status":
 		err = cmdStatus(args)
+	case "audit":
+		err = cmdAudit(args)
 	case "service":
 		err = cmdService(args)
 	case "logout":
@@ -143,8 +147,66 @@ func (l liveAdapter) RequestOlderMessages(ctx context.Context, chat string, coun
 	return l.m.RequestOlderMessages(ctx, chat, count)
 }
 
+// envBool reads a boolean environment variable (1, true, yes, on).
+func envBool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(name))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// sendFlags are the opt-in switches for MCP sending.
+type sendFlags struct {
+	allow   bool
+	to      string
+	perHour int
+}
+
+func (f *sendFlags) register(fs *flag.FlagSet) {
+	fs.BoolVar(&f.allow, "mcp-allow-send", envBool("WAMCP_MCP_ALLOW_SEND"),
+		"let MCP agents send WhatsApp text messages (send_message tool); off by default, env WAMCP_MCP_ALLOW_SEND")
+	fs.StringVar(&f.to, "mcp-send-to", os.Getenv("WAMCP_MCP_SEND_TO"),
+		"comma-separated recipients agents may send to: phone numbers with country code, JIDs, or me; empty allows any chat (loopback only), env WAMCP_MCP_SEND_TO")
+	fs.IntVar(&f.perHour, "mcp-send-per-hour", outbox.DefaultPerHour, "maximum messages agents may send in any rolling hour")
+}
+
+func (f *sendFlags) args() []string {
+	if !f.allow {
+		return nil
+	}
+	out := []string{"--mcp-allow-send", "--mcp-send-per-hour", fmt.Sprint(f.perHour)}
+	if f.to != "" {
+		out = append(out, "--mcp-send-to", f.to)
+	}
+	return out
+}
+
+// outbox builds the send policy, or returns nil when sending is off.
+func (f *sendFlags) outbox(exposed bool, arc *archive.Store, mgr *wa.Manager, log *slog.Logger) (*outbox.Outbox, error) {
+	if !f.allow {
+		return nil, nil
+	}
+	allow := strings.Split(f.to, ",")
+	ob, err := outbox.New(arc, outbox.Config{Allow: allow, PerHour: f.perHour},
+		func(ctx context.Context, chat, text, replyTo, id string) (string, error) {
+			res, err := mgr.SendTextWithID(ctx, chat, text, replyTo, id)
+			if err != nil {
+				return "", err
+			}
+			return res.ID, nil
+		}, mgr.NewMessageID, log)
+	if err != nil {
+		return nil, fmt.Errorf("--mcp-send-to: %w", err)
+	}
+	if ob.AllowsAnyone() && exposed {
+		return nil, errors.New("--mcp-allow-send with a non-loopback --listen or a --public-host needs a recipient allowlist (--mcp-send-to)")
+	}
+	return ob, nil
+}
+
 // remoteLive lets the stdio MCP server use the running daemon for live
-// operations (status, media download, older history).
+// operations (status, media download, older history, sending).
 type remoteLive struct {
 	base, token string
 	arc         *archive.Store
@@ -210,6 +272,20 @@ func (r *remoteLive) DownloadMedia(ctx context.Context, chat, id string) (string
 func (r *remoteLive) RequestOlderMessages(ctx context.Context, chat string, count int) error {
 	return r.call(ctx, http.MethodPost, "/api/live/older", map[string]any{"chat": chat, "count": count}, nil)
 }
+
+// remoteSender forwards send_message to the daemon, which enforces the policy.
+type remoteSender struct {
+	*remoteLive
+	policy string
+}
+
+func (r *remoteSender) SendText(ctx context.Context, req outbox.Request) (outbox.Result, error) {
+	var out outbox.Result
+	err := r.call(ctx, http.MethodPost, "/api/live/send", req, &out)
+	return out, err
+}
+
+func (r *remoteSender) Policy() string { return r.policy + " (enforced by the wamcp daemon)" }
 
 // openLog returns the log destination: stderr, or a file rotated to
 // <path>.1 whenever it grows past 20 MB.
@@ -288,6 +364,8 @@ func cmdServe(args []string) (retErr error) {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	var c common
 	c.register(fs)
+	var send sendFlags
+	send.register(fs)
 	pairPhone := fs.String("pair-phone", "", "link with a pair code for this phone number instead of scanning the QR code")
 	deviceName := fs.String("device-name", "wamcp", "name shown in WhatsApp → Linked devices")
 	noFullHistory := fs.Bool("no-full-history", false, "do not ask the phone for the complete history when linking")
@@ -297,6 +375,8 @@ func cmdServe(args []string) (retErr error) {
 	waLogLevel := fs.String("wa-log-level", "warn", "log level of the WhatsApp library")
 	logFile := fs.String("log-file", "", "write logs to this file instead of stderr")
 	deleted := fs.String("deleted", "keep", "messages deleted for everyone: keep (content stays, marked as deleted) or remove (wiped like in WhatsApp)")
+	publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"),
+		"comma-separated host names of a reverse proxy or tunnel in front of wamcp (for example wa.example.com); turns on token sign-in for the web client, env WAMCP_PUBLIC_HOST")
 	webAuth := fs.String("web-auth", "local", "web client sign-in: local (browsers on this machine are signed in automatically) or token")
 	asService := fs.Bool("service", false, "running under launchd (stop restarting after repeated startup failures)")
 	_ = fs.Parse(args)
@@ -354,10 +434,28 @@ func cmdServe(args []string) (retErr error) {
 		return err
 	}
 
-	mcpSrv := mcpserver.New(arc, liveAdapter{mgr}, version)
-	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpSrv }, nil)
-	webSrv := web.Handler(web.Options{Token: token, MCP: mcpHandler, Archive: arc, Daemon: mgr, Log: log,
-		AllowAnyHost: !isLoopback(c.listen), TrustLocal: *webAuth == "local" && isLoopback(c.listen)})
+	var publicHosts []string
+	for _, h := range strings.Split(*publicHost, ",") {
+		if h = strings.ToLower(strings.TrimSpace(h)); h != "" {
+			publicHosts = append(publicHosts, h)
+		}
+	}
+	exposed := !isLoopback(c.listen) || len(publicHosts) > 0
+	ob, err := send.outbox(exposed, arc, mgr, log)
+	if err != nil {
+		return err
+	}
+	var mcpOpts []mcpserver.Option
+	webOpts := web.Options{Token: token, Archive: arc, Daemon: mgr, Log: log,
+		AllowAnyHost: !isLoopback(c.listen), PublicHosts: publicHosts, TrustLocal: *webAuth == "local" && !exposed}
+	if ob != nil {
+		mcpOpts = append(mcpOpts, mcpserver.WithSender(ob))
+		webOpts.AgentSend = ob
+		log.Warn("MCP agents can send WhatsApp messages (--mcp-allow-send)", "policy", ob.Policy())
+	}
+	mcpSrv := mcpserver.New(arc, liveAdapter{mgr}, version, mcpOpts...)
+	webOpts.MCP = mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpSrv }, nil)
+	webSrv := web.Handler(webOpts)
 	httpSrv := &http.Server{Addr: c.listen, Handler: webSrv, ReadHeaderTimeout: 10 * time.Second}
 	ln, err := net.Listen("tcp", c.listen)
 	if err != nil {
@@ -369,13 +467,13 @@ func cmdServe(args []string) (retErr error) {
 			stop()
 		}
 	}()
-	if !isLoopback(c.listen) {
-		log.Warn("listening on a non-loopback address; anyone who can reach it and has the token can read your WhatsApp", "listen", c.listen)
+	if exposed {
+		log.Warn("reachable beyond this machine; anyone who can reach it and has the token can read your WhatsApp", "listen", c.listen, "public_host", publicHosts)
 	}
 	log.Info("wamcp started", "version", version, "web", c.baseURL(), "mcp", c.baseURL()+"/mcp", "data", c.dataDir)
 	if interactive {
 		link := c.baseURL()
-		if *webAuth == "token" || !isLoopback(c.listen) {
+		if *webAuth == "token" || exposed {
 			link += "/login?code=" + webSrv.NewLoginCode()
 		}
 		fmt.Fprintf(os.Stderr, "\n  Web client:   %s\n  MCP endpoint: %s/mcp  (see `wamcp config`)\n\n", link, c.baseURL())
@@ -393,6 +491,8 @@ func cmdMCP(args []string) error {
 	fs := flag.NewFlagSet("mcp", flag.ExitOnError)
 	var c common
 	c.register(fs)
+	allowSend := fs.Bool("allow-send", envBool("WAMCP_MCP_ALLOW_SEND"),
+		"offer send_message; the daemon must also run with --mcp-allow-send, and it enforces the policy (env WAMCP_MCP_ALLOW_SEND)")
 	_ = fs.Parse(args)
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -403,10 +503,25 @@ func cmdMCP(args []string) error {
 	}
 	defer arc.Close()
 	var live mcpserver.Live
+	var opts []mcpserver.Option
 	if tok, err := c.paths().ReadToken(); err == nil {
-		live = &remoteLive{base: c.baseURL(), token: tok, arc: arc, http: &http.Client{Timeout: 90 * time.Second}}
+		rl := &remoteLive{base: c.baseURL(), token: tok, arc: arc, http: &http.Client{Timeout: 90 * time.Second}}
+		live = rl
+		if *allowSend {
+			pctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+			var p struct{ Policy string }
+			err := rl.call(pctx, http.MethodGet, "/api/live/send", nil, &p)
+			cancel()
+			if err != nil {
+				log.Warn("send_message is not offered", "reason", err)
+			} else {
+				opts = append(opts, mcpserver.WithSender(&remoteSender{remoteLive: rl, policy: p.Policy}))
+			}
+		}
+	} else if *allowSend {
+		log.Warn("send_message is not offered: no access token yet; start the daemon first")
 	}
-	srv := mcpserver.New(arc, live, version)
+	srv := mcpserver.New(arc, live, version, opts...)
 	if err := srv.Run(ctx, &mcp.StdioTransport{}); err != nil && ctx.Err() == nil {
 		log.Error("mcp stdio", "err", err)
 		return err
@@ -543,6 +658,39 @@ func cmdStatus(args []string) error {
 	return nil
 }
 
+func cmdAudit(args []string) error {
+	fs := flag.NewFlagSet("audit", flag.ExitOnError)
+	var c common
+	c.register(fs)
+	limit := fs.Int("limit", 50, "number of records, newest first")
+	_ = fs.Parse(args)
+	ctx := context.Background()
+	arc, err := archive.OpenExisting(ctx, c.paths().Archive())
+	if err != nil {
+		return err
+	}
+	defer arc.Close()
+	recs, err := arc.AgentSends(ctx, max(*limit, 1))
+	if err != nil {
+		return err
+	}
+	if len(recs) == 0 {
+		fmt.Println("No messages were sent by MCP agents.")
+		return nil
+	}
+	for _, a := range recs {
+		fmt.Printf("%s  %-8s  %s  id=%s", a.CreatedAt.Format("2006-01-02 15:04:05"), a.Status, a.ChatJID, a.MessageID)
+		if a.Client != "" {
+			fmt.Printf("  client=%q", a.Client)
+		}
+		if a.Error != "" {
+			fmt.Printf("  error=%q", a.Error)
+		}
+		fmt.Printf("\n    %s\n", strings.ReplaceAll(a.Text, "\n", "\n    "))
+	}
+	return nil
+}
+
 func cmdService(args []string) error {
 	if len(args) == 0 {
 		return errors.New("usage: wamcp service install|uninstall|restart|status [serve flags]")
@@ -553,7 +701,13 @@ func cmdService(args []string) error {
 		var c common
 		c.register(fs)
 		autoMedia := fs.Bool("auto-media", false, "download media of new messages automatically")
+		var send sendFlags
+		send.register(fs)
+		publicHost := fs.String("public-host", os.Getenv("WAMCP_PUBLIC_HOST"), "host names of a reverse proxy or tunnel in front of wamcp")
 		_ = fs.Parse(args[1:])
+		if _, err := send.outbox(!isLoopback(c.listen) || strings.TrimSpace(*publicHost) != "", nil, nil, nil); err != nil {
+			return err
+		}
 		exe, err := os.Executable()
 		if err != nil {
 			return err
@@ -588,6 +742,10 @@ func cmdService(args []string) error {
 		serveArgs := []string{exe, "serve", "--service", "--data-dir", c.dataDir, "--listen", c.listen, "--log-file", logFile}
 		if *autoMedia {
 			serveArgs = append(serveArgs, "--auto-media")
+		}
+		serveArgs = append(serveArgs, send.args()...)
+		if *publicHost != "" {
+			serveArgs = append(serveArgs, "--public-host", *publicHost)
 		}
 		path, err := service.Install(serveArgs, filepath.Join(paths.Logs(), "launchd.log"))
 		if err != nil {

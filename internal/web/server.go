@@ -18,12 +18,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/mi4uu/wamcp/internal/archive"
+	"github.com/mi4uu/wamcp/internal/outbox"
 	"github.com/mi4uu/wamcp/internal/wa"
 )
 
@@ -56,6 +58,12 @@ type Daemon interface {
 	SubscribePresence(ctx context.Context, jid string) error
 }
 
+// AgentSender is the send policy for MCP agents (internal/outbox).
+type AgentSender interface {
+	SendText(ctx context.Context, req outbox.Request) (outbox.Result, error)
+	Policy() string
+}
+
 // Options configures the HTTP handler.
 type Options struct {
 	Token        string       // bearer token for /mcp and the web login
@@ -64,9 +72,15 @@ type Options struct {
 	Daemon       Daemon
 	Log          *slog.Logger
 	AllowAnyHost bool // set when listening on a non-loopback address
+	// PublicHosts are extra Host header names accepted on a loopback
+	// listener, for a reverse proxy or tunnel in front of wamcp.
+	PublicHosts []string
 	// TrustLocal signs in every browser connecting from this machine, so the
 	// web client needs no token. /mcp always requires the bearer token.
 	TrustLocal bool
+	// AgentSend is set when the daemon runs with --mcp-allow-send; it serves
+	// send_message for stdio MCP servers.
+	AgentSend AgentSender
 }
 
 const cookieName = "wamcp_session"
@@ -189,7 +203,7 @@ func Handler(opt Options) *Server {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		// Browsers of the local user are signed in when they open the page;
 		// API calls always need the session cookie.
-		if s.opt.TrustLocal && !s.signedIn(r) && sameUserPeer(r) {
+		if s.opt.TrustLocal && !s.signedIn(r) && !proxied(r) && sameUserPeer(r) {
 			s.setSession(w)
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -208,6 +222,8 @@ func Handler(opt Options) *Server {
 	mux.Handle("GET /api/live/status", s.bearer(http.HandlerFunc(s.apiLiveStatus)))
 	mux.Handle("POST /api/live/media", s.bearer(http.HandlerFunc(s.apiLiveMedia)))
 	mux.Handle("POST /api/live/older", s.bearer(http.HandlerFunc(s.apiLiveOlder)))
+	mux.Handle("GET /api/live/send", s.bearer(http.HandlerFunc(s.apiLiveSendPolicy)))
+	mux.Handle("POST /api/live/send", s.bearer(http.HandlerFunc(s.apiLiveSend)))
 
 	// Signed in.
 	auth := func(pattern string, h http.HandlerFunc) { mux.Handle(pattern, s.requireSession(h)) }
@@ -262,7 +278,7 @@ func (s *server) localOnly(next http.Handler) http.Handler {
 				host = h
 			}
 			host = strings.Trim(host, "[]")
-			if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			if host != "localhost" && host != "127.0.0.1" && host != "::1" && !slices.Contains(s.opt.PublicHosts, strings.ToLower(host)) {
 				http.Error(w, "forbidden host", http.StatusForbidden)
 				return
 			}
@@ -300,6 +316,20 @@ func fromLoopback(r *http.Request) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// proxied reports whether the request carries headers that reverse proxies
+// and tunnels add. A tunnel such as cloudflared running as the same user
+// connects over loopback from a same-user process, so sameUserPeer alone
+// would sign in every visitor of the public hostname.
+func proxied(r *http.Request) bool {
+	for _, h := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
+		"X-Real-Ip", "Cf-Connecting-Ip", "Cf-Ray", "True-Client-Ip", "Via"} {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // lsofPath finds lsof once; launchd starts services with a minimal PATH.
@@ -420,6 +450,39 @@ func (s *server) apiLiveOlder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]bool{"ok": true})
+}
+
+var errSendDisabled = errors.New("sending is disabled: the daemon was started without --mcp-allow-send")
+
+func (s *server) apiLiveSendPolicy(w http.ResponseWriter, _ *http.Request) {
+	if s.opt.AgentSend == nil {
+		writeError(w, http.StatusForbidden, errSendDisabled)
+		return
+	}
+	writeJSON(w, map[string]string{"policy": s.opt.AgentSend.Policy()})
+}
+
+func (s *server) apiLiveSend(w http.ResponseWriter, r *http.Request) {
+	if s.opt.AgentSend == nil {
+		writeError(w, http.StatusForbidden, errSendDisabled)
+		return
+	}
+	var in outbox.Request
+	if err := readJSON(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	in.Client = strings.TrimSpace("stdio via daemon API, reports " + strconv.Quote(in.Client))
+	res, err := s.opt.AgentSend.SendText(r.Context(), in)
+	switch {
+	case errors.Is(err, outbox.ErrNotAllowed), errors.Is(err, outbox.ErrRateLimited),
+		errors.Is(err, outbox.ErrUnknownOutcome), errors.Is(err, outbox.ErrKeyReused):
+		writeError(w, http.StatusConflict, err)
+	case err != nil:
+		writeError(w, http.StatusBadGateway, err)
+	default:
+		writeJSON(w, res)
+	}
 }
 
 func (s *server) apiLoginCode(w http.ResponseWriter, _ *http.Request) {
