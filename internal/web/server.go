@@ -64,6 +64,7 @@ type Daemon interface {
 // AgentSender is the send policy for MCP agents (internal/outbox).
 type AgentSender interface {
 	SendText(ctx context.Context, req outbox.Request) (outbox.Result, error)
+	SendFile(ctx context.Context, req outbox.Request) (outbox.Result, error)
 	Policy() string
 }
 
@@ -93,6 +94,10 @@ type Options struct {
 	// About is shown in Settings > About.
 	About about.Info
 }
+
+// MaxMCPBody caps one MCP request: room for a base64 file at the send_file
+// limit, far below what would strain the daemon.
+const MaxMCPBody = outbox.DefaultMaxFileBytes/3*4 + 1<<20
 
 const cookieName = "wamcp_session"
 
@@ -212,7 +217,7 @@ func Handler(opt Options) *Server {
 		mux.Handle("POST /api/oauth/revoke", s.bearer(http.HandlerFunc(s.apiOAuthRevoke)))
 	}
 	if opt.MCP != nil {
-		mux.Handle("/mcp", s.agentBearer(opt.MCP))
+		mux.Handle("/mcp", s.agentBearer(http.MaxBytesHandler(opt.MCP, MaxMCPBody)))
 	}
 	static, _ := fs.Sub(staticFS, "static")
 	files := http.FileServerFS(static)
@@ -548,12 +553,17 @@ func (s *server) apiLiveSend(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in outbox.Request
-	if err := readJSON(r, &in); err != nil {
+	// Room for a base64 file of outbox.DefaultMaxFileBytes.
+	if err := readJSONLimit(r, &in, outbox.DefaultMaxFileBytes/3*4+1<<20); err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	in.Client = strings.TrimSpace("stdio via daemon API, reports " + strconv.Quote(in.Client))
-	res, err := s.opt.AgentSend.SendText(r.Context(), in)
+	send := s.opt.AgentSend.SendText
+	if in.File != nil {
+		send = s.opt.AgentSend.SendFile
+	}
+	res, err := send(r.Context(), in)
 	switch {
 	case errors.Is(err, outbox.ErrNotAllowed), errors.Is(err, outbox.ErrRateLimited),
 		errors.Is(err, outbox.ErrUnknownOutcome), errors.Is(err, outbox.ErrKeyReused):
@@ -710,8 +720,10 @@ func (s *server) apiEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func readJSON(r *http.Request, v any) error {
-	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+func readJSON(r *http.Request, v any) error { return readJSONLimit(r, v, 1<<20) }
+
+func readJSONLimit(r *http.Request, v any, limit int64) error {
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, limit))
 	if err := dec.Decode(v); err != nil {
 		return errors.New("invalid JSON body")
 	}

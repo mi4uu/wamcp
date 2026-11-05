@@ -2,6 +2,7 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -63,8 +64,8 @@ func toolNames(t *testing.T, cs *mcp.ClientSession) []string {
 
 func TestSendToolHiddenByDefault(t *testing.T) {
 	cs := connect(t, New(seeded(t), nil, "test"))
-	if slices.Contains(toolNames(t, cs), "send_message") {
-		t.Fatal("send_message is listed without the switch")
+	if names := toolNames(t, cs); slices.Contains(names, "send_message") || slices.Contains(names, "send_file") {
+		t.Fatal("send tools are listed without the switch")
 	}
 	if ins := cs.InitializeResult().Instructions; !strings.HasPrefix(ins, "Read-only access") {
 		t.Errorf("default instructions must say read-only: %q", ins)
@@ -136,5 +137,61 @@ func TestSendMessageWithSwitch(t *testing.T) {
 	if len(recs) != 3 || recs[0].Status != archive.SendRefused || recs[1].Status != archive.SendDuplicate ||
 		recs[2].Status != archive.SendSent || recs[2].Client != "test-client 9" {
 		t.Fatalf("audit log: %+v", recs)
+	}
+}
+
+func (c *countingWA) sendFile(_ context.Context, _ string, f outbox.File, caption, _, id string) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if f.Name != "plan.pdf" || f.MimeType != "application/pdf" || caption != "Plan" || string(f.Data) != "%PDF-1.4 test" {
+		return "", fmt.Errorf("unexpected file %+v %q", f, caption)
+	}
+	c.sent++
+	return id, nil
+}
+
+func TestSendFileTool(t *testing.T) {
+	store := seeded(t)
+	wa := &countingWA{}
+	ob, err := outbox.New(store, outbox.Config{Allow: []string{"me"}}, wa.send, wa.id, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := connect(t, New(store, nil, "test", WithSender(ob.WithFiles(wa.sendFile))))
+	if !slices.Contains(toolNames(t, cs), "send_file") {
+		t.Fatal("send_file not listed with the switch")
+	}
+	args := map[string]any{"chat": "me", "caption": "Plan", "file_name": "plan.pdf",
+		"data_base64": base64.StdEncoding.EncodeToString([]byte("%PDF-1.4 test")), "idempotency_key": "plan-1"}
+	mustContain(t, call(t, cs, "send_file", args), "Sent the file to")
+	mustContain(t, call(t, cs, "send_file", args), "Already sent")
+	if wa.sent != 1 {
+		t.Fatalf("sent %d times", wa.sent)
+	}
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "send_file",
+		Arguments: map[string]any{"chat": "me", "path": "/etc/hosts"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "--mcp-send-files-from") {
+		t.Fatalf("path without a files directory was not refused: %+v", res.Content)
+	}
+}
+
+func TestSendFileRefusesOversizedDataBeforeDecoding(t *testing.T) {
+	store := seeded(t)
+	wa := &countingWA{}
+	ob, err := outbox.New(store, outbox.Config{Allow: []string{"me"}}, wa.send, wa.id, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Called directly: the in-memory transport caps frames at 16 MB, below
+	// what the tool must refuse on the HTTP transport.
+	s := &server{arc: store, loc: time.Local, now: time.Now, sender: ob.WithFiles(wa.sendFile)}
+	limit := base64.StdEncoding.EncodedLen(outbox.DefaultMaxFileBytes)
+	huge := strings.Repeat("A", limit+limit/38+68)
+	_, _, err = s.sendFileTool(context.Background(), nil, sendFileIn{Chat: "me", FileName: "big.bin", DataBase64: huge})
+	if err == nil || !strings.Contains(err.Error(), "file limit") || wa.sent != 0 {
+		t.Fatalf("oversized data: %v, sent %d", err, wa.sent)
 	}
 }

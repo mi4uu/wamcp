@@ -27,8 +27,8 @@ import (
 )
 
 // Actions in this file are reachable from the authenticated web client. The
-// MCP server reaches only SendTextWithID, and only through internal/outbox
-// when the daemon runs with --mcp-allow-send.
+// MCP server reaches only SendTextWithID and SendMediaWithID, and only
+// through internal/outbox when the daemon runs with --mcp-allow-send.
 
 func (m *Manager) target(chat string) (*whatsmeow.Client, types.JID, error) {
 	cli, err := m.connectedClient()
@@ -132,6 +132,12 @@ type MediaUpload struct {
 
 // SendMedia uploads and sends an image, video, audio or document.
 func (m *Manager) SendMedia(ctx context.Context, chat string, up MediaUpload) (*ingest.MessageResult, error) {
+	return m.SendMediaWithID(ctx, chat, up, "")
+}
+
+// SendMediaWithID is SendMedia with a caller-chosen message ID ("" for a new
+// one), like SendTextWithID.
+func (m *Manager) SendMediaWithID(ctx context.Context, chat string, up MediaUpload, id string) (*ingest.MessageResult, error) {
 	if len(up.Data) == 0 {
 		return nil, errors.New("empty file")
 	}
@@ -189,7 +195,7 @@ func (m *Manager) SendMedia(ctx context.Context, chat string, up MediaUpload) (*
 			Mimetype: proto.String(mimeType), FileName: proto.String(name), Title: proto.String(name),
 			Caption: optional(up.Caption), ContextInfo: ci}}
 	}
-	resp, err := cli.SendMessage(ctx, to, msg)
+	resp, err := cli.SendMessage(ctx, to, msg, whatsmeow.SendRequestExtra{ID: types.MessageID(id)})
 	if err != nil {
 		return nil, err
 	}
