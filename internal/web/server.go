@@ -199,7 +199,7 @@ func Handler(opt Options) *Server {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		// Browsers of the local user are signed in when they open the page;
 		// API calls always need the session cookie.
-		if s.opt.TrustLocal && !s.signedIn(r) && sameUserPeer(r) {
+		if s.opt.TrustLocal && !s.signedIn(r) && !proxied(r) && sameUserPeer(r) {
 			s.setSession(w)
 		}
 		w.Header().Set("Cache-Control", "no-store")
@@ -312,6 +312,20 @@ func fromLoopback(r *http.Request) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// proxied reports whether the request carries headers that reverse proxies
+// and tunnels add. A tunnel such as cloudflared running as the same user
+// connects over loopback from a same-user process, so sameUserPeer alone
+// would sign in every visitor of the public hostname.
+func proxied(r *http.Request) bool {
+	for _, h := range []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
+		"X-Real-Ip", "Cf-Connecting-Ip", "Cf-Ray", "True-Client-Ip", "Via"} {
+		if r.Header.Get(h) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // lsofPath finds lsof once; launchd starts services with a minimal PATH.

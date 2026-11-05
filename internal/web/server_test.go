@@ -222,6 +222,30 @@ func TestLocalBrowserGetsCookieButAPINeedsIt(t *testing.T) {
 	}
 }
 
+func TestProxiedRequestIsNotSignedInAutomatically(t *testing.T) {
+	if _, err := exec.LookPath("lsof"); err != nil {
+		t.Skip("lsof not available")
+	}
+	srv, _ := setup(t)
+	srv.s.opt.TrustLocal = true
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+	for _, h := range []string{"X-Forwarded-For", "Cf-Connecting-Ip", "Forwarded"} {
+		req, _ := http.NewRequest("GET", ts.URL+"/", nil)
+		req.Header.Set(h, "203.0.113.7")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		for _, c := range resp.Cookies() {
+			if c.Name == cookieName {
+				t.Fatalf("request through a proxy (%s) got a session cookie", h)
+			}
+		}
+	}
+}
+
 func TestPresenceFollowsVisibleTabs(t *testing.T) {
 	srv, d := setup(t)
 	d.presence = make(chan bool, 10)

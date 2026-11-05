@@ -190,6 +190,7 @@ Everything lives in `~/.wamcp` (mode `0700`):
 | `token` | Access token for MCP and the web client |
 
 - The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>`, there is no way to turn that off. The web client needs a session cookie obtained with the token (`wamcp open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
+- Behind a reverse proxy or tunnel (cloudflared, nginx, Caddy) run with `--web-auth token`. Requests that carry proxy headers (`X-Forwarded-For`, `Forwarded`, `Cf-Connecting-Ip` and similar) are never signed in automatically, but a proxy that strips them would look like a local browser.
 - Messages deleted for everyone keep their content in the archive and are marked with who deleted them and when. They stay searchable. Run `wamcp serve --deleted remove` to wipe them instead, like WhatsApp does.
 - The daemon does not mark you "online" in the background, so your phone keeps its notifications. The web client shows you online only while its tab is visible.
 
