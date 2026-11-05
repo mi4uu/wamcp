@@ -194,9 +194,9 @@ Stdio clients (`wamcp mcp`) also need `--allow-send` (or the same env var) to li
 What the daemon enforces on every `send_message` call:
 
 - **Allowlist.** Recipients off the list are refused. Group members are not checked: allowing a group allows writing to that group.
-- **Rate limit.** Counted from the audit log, so a restart does not reset it.
+- **Rate limit.** Counted from the audit log, so a restart does not reset it. Failed sends count too, since an error does not prove the message was dropped.
 - **No double sends.** A call with the same `idempotency_key` returns the first result instead of sending again (24 hours). Without a key, the same text to the same chat within 10 minutes counts as a retry. If the daemon stopped in the middle of a send, the retry is refused with a clear message instead of guessing; a failed send that is retried reuses the same WhatsApp message ID.
-- **Audit log.** Every attempt (sent, failed, refused) is written to the `agent_sends` table *before* anything goes to WhatsApp. `wamcp audit` prints it; the daemon log has one line per send.
+- **Audit log.** Every call is written to the `agent_sends` table as sent, failed, refused or duplicate, and a send is recorded *before* anything goes to WhatsApp. `wamcp audit` prints it; the daemon log has one line per call. Refused and duplicate calls stop being stored after 200 in an hour (they are still logged), so a looping agent cannot fill the disk.
 - **Text only**, up to 4096 characters, optionally as a reply. No files, no edits or deletes, no group admin.
 
 What it does not protect against, so you can decide:
@@ -235,7 +235,8 @@ Everything lives in `~/.wamcp` (mode `0700`):
 | `token` | Access token for MCP and the web client |
 
 - The server listens on `127.0.0.1` unless you pass `--listen`. `/mcp` always requires `Authorization: Bearer <token>`, there is no way to turn that off. The web client needs a session cookie obtained with the token (`wamcp open`). Requests with a foreign `Host` header (DNS rebinding) and cross-site form posts are rejected.
-- Behind a reverse proxy or tunnel (cloudflared, nginx, Caddy) run with `--web-auth token`. Requests that carry proxy headers (`X-Forwarded-For`, `Forwarded`, `Cf-Connecting-Ip` and similar) are never signed in automatically, but a proxy that strips them would look like a local browser.
+- Behind a reverse proxy or tunnel (cloudflared, nginx, Caddy) use `--public-host` or `--web-auth token`. Without them, requests that carry proxy headers (`X-Forwarded-For`, `Forwarded`, `Cf-Connecting-Ip` and similar) or come from a known proxy process (cloudflared, ngrok, ssh, nginx, Caddy and others) are never signed in automatically, but a proxy that is neither would look like a local browser.
+- When wamcp is reachable from other machines (`--public-host` or a non-loopback `--listen`), linking a phone needs a signed-in browser, so a visitor cannot link their own account to your daemon.
 - Messages deleted for everyone keep their content in the archive and are marked with who deleted them and when. They stay searchable. Run `wamcp serve --deleted remove` to wipe them instead, like WhatsApp does.
 - The daemon does not mark you "online" in the background, so your phone keeps its notifications. The web client shows you online only while its tab is visible.
 

@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -212,9 +213,9 @@ func Handler(opt Options) *Server {
 
 	// Public: needed before signing in (pairing and login).
 	mux.HandleFunc("GET /api/session", s.apiSession)
-	mux.HandleFunc("GET /qr.png", s.qrPNG)
-	mux.HandleFunc("POST /api/pairing/restart", s.apiPairRestart)
-	mux.HandleFunc("POST /api/pairing/phone", s.apiPairPhone)
+	mux.Handle("GET /qr.png", s.pairing(s.qrPNG))
+	mux.Handle("POST /api/pairing/restart", s.pairing(s.apiPairRestart))
+	mux.Handle("POST /api/pairing/phone", s.pairing(s.apiPairPhone))
 	mux.HandleFunc("POST /api/login", s.apiLogin)
 	mux.HandleFunc("GET /login", s.loginWithCode)
 	mux.Handle("POST /api/login-code", s.bearer(http.HandlerFunc(s.apiLoginCode)))
@@ -332,6 +333,19 @@ func proxied(r *http.Request) bool {
 	return false
 }
 
+// proxyProcess reports whether command is a known proxy or tunnel. Such a
+// peer forwards other people's requests even when it strips proxy headers.
+func proxyProcess(command string) bool {
+	c := strings.ToLower(filepath.Base(command))
+	for _, p := range []string{"cloudflared", "ngrok", "tailscale", "frpc", "ssh", "socat", "ncat", "nginx", "caddy",
+		"haproxy", "traefik", "envoy", "httpd", "apache", "lighttpd", "stunnel", "tinyproxy", "squid", "rathole", "bore", "zrok"} {
+		if strings.HasPrefix(c, p) {
+			return true
+		}
+	}
+	return false
+}
+
 // lsofPath finds lsof once; launchd starts services with a minimal PATH.
 var lsofPath = sync.OnceValue(func() string {
 	for _, p := range []string{"/usr/sbin/lsof", "/usr/bin/lsof"} {
@@ -364,17 +378,19 @@ func sameUserPeer(r *http.Request) bool {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
-	out, _ := exec.CommandContext(ctx, lsofPath(), "-nP", "-iTCP:"+port, "-sTCP:ESTABLISHED", "-F", "pun").Output()
+	out, _ := exec.CommandContext(ctx, lsofPath(), "+c", "0", "-nP", "-iTCP:"+port, "-sTCP:ESTABLISHED", "-F", "pcun").Output()
 	want := r.RemoteAddr + "->" + local.String()
-	uid := ""
+	uid, command := "", ""
 	for _, line := range strings.Split(string(out), "\n") {
 		switch {
 		case strings.HasPrefix(line, "p"):
-			uid = ""
+			uid, command = "", ""
+		case strings.HasPrefix(line, "c"):
+			command = line[1:]
 		case strings.HasPrefix(line, "u"):
 			uid = line[1:]
 		case strings.HasPrefix(line, "n") && line[1:] == want:
-			return uid == strconv.Itoa(os.Getuid())
+			return uid == strconv.Itoa(os.Getuid()) && !proxyProcess(command)
 		}
 	}
 	return false
@@ -527,10 +543,13 @@ func (s *server) apiSession(w http.ResponseWriter, r *http.Request) {
 		"authenticated": s.signedIn(r),
 		"state":         st.State,
 		"paired":        st.Account != "" && st.State != wa.StateLoggedOut && st.State != wa.StatePairing && st.State != wa.StateQRExpired,
-		"has_qr":        hasQR,
+		"has_qr":        hasQR && (s.signedIn(r) || !s.exposed()),
+		// The browser must sign in before it may pair.
+		"pairing_locked": s.exposed() && !s.signedIn(r),
 	}
-	// Pairing details are public only while pairing; afterwards only for signed-in users.
-	if s.signedIn(r) || out["paired"] == false {
+	// Pairing details are public only while pairing and only on this machine;
+	// otherwise only for signed-in users.
+	if s.signedIn(r) || (out["paired"] == false && !s.exposed()) {
 		out["pair_code"] = st.PairCode
 		out["last_error"] = st.LastError
 	}
@@ -539,6 +558,21 @@ func (s *server) apiSession(w http.ResponseWriter, r *http.Request) {
 		out["push_name"] = st.PushName
 	}
 	writeJSON(w, out)
+}
+
+// exposed reports whether the server can be reached from other machines.
+func (s *server) exposed() bool { return s.opt.AllowAnyHost || len(s.opt.PublicHosts) > 0 }
+
+// pairing guards the pairing endpoints. On an exposed server a visitor could
+// otherwise link their own WhatsApp account to this daemon.
+func (s *server) pairing(h http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.exposed() && !s.signedIn(r) {
+			writeError(w, http.StatusUnauthorized, errors.New("sign in first (run `wamcp open` or use the link printed by `wamcp serve`)"))
+			return
+		}
+		h(w, r)
+	})
 }
 
 func (s *server) qrPNG(w http.ResponseWriter, _ *http.Request) {

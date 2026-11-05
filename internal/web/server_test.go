@@ -130,6 +130,38 @@ func TestPublicHostAllowed(t *testing.T) {
 	}
 }
 
+func TestPairingNeedsSignInWhenExposed(t *testing.T) {
+	srv, _ := setup(t)
+	srv.s.opt.PublicHosts = []string{"wa.example.com"}
+	for _, ep := range []struct{ method, path string }{{"GET", "/qr.png"}, {"POST", "/api/pairing/restart"}, {"POST", "/api/pairing/phone"}} {
+		req := httptest.NewRequest(ep.method, "http://wa.example.com"+ep.path, strings.NewReader(`{"phone":"+48600000000"}`))
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Errorf("%s %s from a public host: got %d", ep.method, ep.path, rec.Code)
+		}
+	}
+	req := httptest.NewRequest("GET", "http://wa.example.com/api/session", nil)
+	rec := httptest.NewRecorder()
+	srv.ServeHTTP(rec, req)
+	var out map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["pairing_locked"] != true || out["pair_code"] != nil || out["has_qr"] != false {
+		t.Fatalf("session leaks pairing details to a public visitor: %v", out)
+	}
+}
+
+func TestProxyProcessNames(t *testing.T) {
+	for cmd, want := range map[string]bool{"cloudflared": true, "/usr/local/bin/ngrok": true, "ssh": true, "nginx": true,
+		"Google Chrome Helper": false, "firefox": false, "com.apple.WebKit.Networking": false, "curl": false} {
+		if got := proxyProcess(cmd); got != want {
+			t.Errorf("proxyProcess(%q) = %v, want %v", cmd, got, want)
+		}
+	}
+}
+
 func TestSessionFlow(t *testing.T) {
 	srv, d := setup(t)
 	if rec := do(srv, "GET", "/api/chats", "", nil); rec.Code != http.StatusUnauthorized {

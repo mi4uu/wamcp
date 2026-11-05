@@ -238,8 +238,9 @@ async function boot() {
     return;
   }
   $('boot').hidden = true;
-  if (!S.session.paired) return showPair();
+  if (!S.session.paired && !S.session.pairing_locked) return showPair();
   if (!S.session.authenticated) return showLogin();
+  if (!S.session.paired) return showPair();
   showApp();
 }
 
@@ -256,6 +257,10 @@ function showPair() {
     let s;
     try { s = await api('/api/session'); } catch { return; }
     S.session = s;
+    if (s.pairing_locked) {
+      clearInterval(pairTimer);
+      return showLogin();
+    }
     if (s.paired && s.state === 'connected') {
       clearInterval(pairTimer);
       return s.authenticated ? showApp() : showLogin();
