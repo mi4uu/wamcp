@@ -1,17 +1,17 @@
-# wamcp compared with other WhatsApp MCP servers
+# whatsupd compared with other WhatsApp MCP servers
 
 As of 2026-11-05. Stars, last push and license come from the GitHub API on that date. Everything else comes from reading each project's source or README at that date; cells taken only from a README say so. Projects change fast, so check the links before you rely on a cell.
 
 ## The short version
 
 - **lharries/whatsapp-mcp** is the one everyone knows (6.8k stars). It works, it can send text, files and voice notes, and it has not had a commit since 2025-07-13. Its Go bridge serves an unauthenticated REST API on all interfaces, sends are on with no allowlist, there are no tests.
-- **delltrak/wamcp** is the most feature-rich: 169 tools, Baileys or the official Cloud API, OAuth 2.1, Postgres, a real test suite and CI. It needs Node 24, Redis and Docker, sends by default, keeps messages 30 days by default, ships no LICENSE file, and uses the same name as this project.
+- **delltrak/wamcp** is the most feature-rich: 169 tools, Baileys or the official Cloud API, OAuth 2.1, Postgres, a real test suite and CI. It needs Node 24, Redis and Docker, sends by default, keeps messages 30 days by default, ships no LICENSE file, and has the name this project had until 2026-11-06.
 - **finereli/whatsapp-mcp** and **felipeadeildo/whatsapp-mcp** run on Cloudflare Workers with OAuth, so they plug into claude.ai with one click. Your messages then live in a Cloudflare account (yours or, for finereli's hosted beta, the operator's).
-- **wamcp** is one Go binary that keeps your whole WhatsApp history on your own disk with full-text search, is read-only by default and can send only when you switch it on, with an allowlist, a rate limit, retry de-duplication and an audit log. Remote clients sign in with an MCP-only token or, opt-in, OAuth 2.1. Nobody has starred it yet.
+- **whatsupd** is one Go binary that keeps your whole WhatsApp history on your own disk with full-text search, is read-only by default and can send only when you switch it on, with an allowlist, a rate limit, retry de-duplication and an audit log. Remote clients sign in with an MCP-only token or, opt-in, OAuth 2.1. Nobody has starred it yet.
 
 ## Table
 
-| | wamcp (this repo) | [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp) | [delltrak/wamcp](https://github.com/delltrak/wamcp) |
+| | whatsupd (this repo) | [lharries/whatsapp-mcp](https://github.com/lharries/whatsapp-mcp) | [delltrak/wamcp](https://github.com/delltrak/wamcp) |
 |---|---|---|---|
 | Stars / last push | new / this repo | 6814 / 2025-07-13 | 27 / 2026-11-02 |
 | License | AGPL-3.0 | MIT | no LICENSE file (`package.json` says MIT) |
@@ -44,7 +44,7 @@ Other projects with 40+ stars, facts from the GitHub API and their READMEs:
 
 - **Tools** (`whatsapp-mcp-server/main.py`): `search_contacts`, `list_messages`, `list_chats`, `get_chat`, `get_direct_chat_by_contact`, `get_contact_chats`, `get_last_interaction`, `get_message_context`, `send_message`, `send_file`, `send_audio_message` (converts with ffmpeg), `download_media`.
 - **Architecture**: the Go bridge stores messages in `store/messages.db` and the session in `store/whatsapp.db`. The Python server reads SQLite directly and calls the bridge at `http://localhost:8080/api/send` and `/api/download`. The bridge listens with `http.ListenAndServe(":8080", nil)`, which is every interface, with no auth on those handlers. Open issue #215 reports exactly this.
-- **Security**: no allowlist, confirmation, rate limit or audit. The README warns about the "lethal trifecta" (private data, untrusted input, ability to send). Open issues #388 (read-only mode) and #394 (loopback bind, token, read-only) ask for what wamcp already does.
+- **Security**: no allowlist, confirmation, rate limit or audit. The README warns about the "lethal trifecta" (private data, untrusted input, ability to send). Open issues #388 (read-only mode) and #394 (loopback bind, token, read-only) ask for what whatsupd already does.
 - **Reliability**: whatsmeow handles reconnects and history sync. Sends are not de-duplicated. No tests, no CI.
 - **Maintenance**: 96 open issues, 173 open PRs, issue #220 asks for new maintainers. Several forks carry it on (verygoodplugins, FelixIsaac).
 
@@ -55,9 +55,9 @@ Other projects with 40+ stars, facts from the GitHub API and their READMEs:
 - **Security**: `src/server/mcp-auth.ts` supports a bearer API key with constant-time compare, Basic auth with scrypt, and an OAuth 2.1 server with dynamic client registration. With none configured, HTTP is open ("the historical open behavior is preserved"). Group, community and app-state writes are off by default; plain sends are always available. No send allowlist or audit table found.
 - **Reliability**: reconnects instances on boot, queue retries (3 attempts), inbound de-dup by `(instanceId, messageId)`.
 - **Maintenance**: 362 commits by one author since 2026-02-28, Dependabot, CI on Node 24 and 26 with lint, typecheck, tests, `npm audit` and a Postgres job.
-- **Name clash**: both projects are called `wamcp`. Ours is `mi4uu/wamcp` (Go, `go install github.com/mi4uu/wamcp/cmd/wamcp@latest`); theirs is an npm/Docker project. Worth a line in any post or listing so people do not mix them up.
+- **Name**: this project was called `wamcp` until 2026-11-06 and was renamed to whatsupd so the two are not mixed up. Old links to `mi4uu/wamcp` redirect here.
 
-## Review of wamcp: gaps, ranked
+## Review of whatsupd: gaps, ranked
 
 Fixed on branch `feat/opt-in-send`:
 
@@ -66,10 +66,10 @@ Fixed on branch `feat/opt-in-send`:
 3. **No opt-in send (feature gap vs everyone else).** Added `send_message` behind `--mcp-allow-send` with allowlist, rate limit, idempotency and audit.
 4. **Untrusted text not flagged to agents (low).** The MCP instructions now say message text is data, not instructions.
 5. **No CI (low).** Added a workflow: gofmt, vet, staticcheck, race tests on Linux and macOS.
-6. **One token did everything (medium).** The MCP token also signed in to the web client, which can send without the policy. Added a separate MCP-only token (`wamcp token --mcp`, `--rotate-mcp`); `wamcp config` prints it.
+6. **One token did everything (medium).** The MCP token also signed in to the web client, which can send without the policy. Added a separate MCP-only token (`whatsupd token --mcp`, `--rotate-mcp`); `whatsupd config` prints it.
 
-7. **No OAuth (high for remote use).** Clients that only speak OAuth could not connect. Added an opt-in OAuth 2.1 server (`--oauth`): metadata discovery, dynamic client registration, authorization code with S256 PKCE, rotating refresh tokens, owner approval with the main token, `wamcp oauth list|revoke`.
-8. **Background service was macOS only (medium).** `wamcp service` now writes a systemd user unit on Linux, tested on Debian trixie.
+7. **No OAuth (high for remote use).** Clients that only speak OAuth could not connect. Added an opt-in OAuth 2.1 server (`--oauth`): metadata discovery, dynamic client registration, authorization code with S256 PKCE, rotating refresh tokens, owner approval with the main token, `whatsupd oauth list|revoke`.
+8. **Background service was macOS only (medium).** `whatsupd service` now writes a systemd user unit on Linux, tested on Debian trixie.
 9. **No MCP media sending (medium).** Added `send_file`: photos, videos, audio, voice notes and documents under the same policy. Paths are refused unless `--mcp-send-files-from` names a directory, and never leave it.
 
 Still open, in order of impact:

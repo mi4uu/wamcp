@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/mi4uu/wamcp/internal/about"
+	"github.com/mi4uu/whatsupd/internal/about"
 )
 
 func TestAboutNeedsSession(t *testing.T) {

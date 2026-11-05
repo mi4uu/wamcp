@@ -1,4 +1,4 @@
-NAME := wamcp
+NAME := whatsupd
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo 0.1.0)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 PREFIX ?= $(HOME)/.local
@@ -6,7 +6,7 @@ PREFIX ?= $(HOME)/.local
 .PHONY: build test install run demo clean dist
 
 build:
-	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(NAME) ./cmd/wamcp
+	go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(NAME) ./cmd/whatsupd
 
 test:
 	go test ./...
@@ -14,14 +14,14 @@ test:
 install: build
 	install -d $(PREFIX)/bin
 	install -m 0755 bin/$(NAME) $(PREFIX)/bin/$(NAME)
-	@if [ -f $(HOME)/Library/LaunchAgents/dev.wamcp.daemon.plist ] || [ -f $${XDG_CONFIG_HOME:-$(HOME)/.config}/systemd/user/$(NAME).service ]; then $(PREFIX)/bin/$(NAME) service restart; fi
+	@if [ -f $(HOME)/Library/LaunchAgents/dev.whatsupd.daemon.plist ] || [ -f $${XDG_CONFIG_HOME:-$(HOME)/.config}/systemd/user/$(NAME).service ]; then $(PREFIX)/bin/$(NAME) service restart; fi
 
 run: build
 	./bin/$(NAME) serve
 
 # Web client with synthetic data on http://127.0.0.1:8799 (sign-in link in the output).
 demo:
-	WAMCP_DEMO_ADDR=127.0.0.1:8799 go test ./internal/web -run TestDemoServer -timeout 0 -v
+	WHATSUPD_DEMO_ADDR=127.0.0.1:8799 go test ./internal/web -run TestDemoServer -timeout 0 -v
 
 PLATFORMS ?= darwin/arm64 darwin/amd64 linux/amd64 linux/arm64
 
@@ -40,7 +40,7 @@ dist:
 	set -e; for p in $(PLATFORMS); do \
 		os=$${p%/*}; arch=$${p#*/}; name=$(NAME)_$(VERSION)_$${os}_$${arch}; \
 		mkdir -p "$(DIST)/$$name"; \
-		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST)/$$name/$(NAME)" ./cmd/wamcp; \
+		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -ldflags "$(LDFLAGS)" -o "$(DIST)/$$name/$(NAME)" ./cmd/whatsupd; \
 		cp LICENSE README.md "$(DIST)/$$name/"; \
 		tar -czf "$(DIST)/$$name.tar.gz" -C "$(DIST)" "$$name"; \
 		if [ "$$os" = linux ]; then for pkg in deb rpm archlinux; do \

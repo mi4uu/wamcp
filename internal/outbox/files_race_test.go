@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mi4uu/wamcp/internal/demo"
+	"github.com/mi4uu/whatsupd/internal/demo"
 )
 
 // TestSendFilePathRaces covers what a check-then-open would miss: a parent

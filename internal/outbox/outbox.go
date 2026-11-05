@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/mi4uu/wamcp/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/archive"
 )
 
 // Refusal errors. Callers can match them with errors.Is.

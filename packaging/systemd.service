@@ -1,6 +1,6 @@
 [Unit]
 Description=@NAME@, WhatsApp archive and MCP server
-Documentation=https://github.com/mi4uu/wamcp
+Documentation=https://github.com/mi4uu/whatsupd
 
 [Service]
 ExecStart=/usr/bin/@NAME@ serve --service

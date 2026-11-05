@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/ingest"
-	"github.com/mi4uu/wamcp/internal/wa"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/ingest"
+	"github.com/mi4uu/whatsupd/internal/wa"
 )
 
 type ingestResult = ingest.MessageResult

@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/mi4uu/wamcp/internal/config"
+	"github.com/mi4uu/whatsupd/internal/config"
 )
 
 func TestAgentTokenPrefersMCPToken(t *testing.T) {

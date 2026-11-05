@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/demo"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/demo"
 )
 
 // fakeWA records deliveries instead of talking to WhatsApp.

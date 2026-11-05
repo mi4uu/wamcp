@@ -1,10 +1,10 @@
 # Security
 
-wamcp holds a copy of your WhatsApp account and, with `--mcp-allow-send`, can send from it. Security reports matter.
+whatsupd holds a copy of your WhatsApp account and, with `--mcp-allow-send`, can send from it. Security reports matter.
 
 ## Reporting
 
-Report privately: [open a security advisory](https://github.com/mi4uu/wamcp/security/advisories/new). Do not open a public issue. Include the version (`wamcp version`), how wamcp runs, and the steps.
+Report privately: [open a security advisory](https://github.com/mi4uu/whatsupd/security/advisories/new). Do not open a public issue. Include the version (`whatsupd version`), how whatsupd runs, and the steps.
 
 ## Supported versions
 

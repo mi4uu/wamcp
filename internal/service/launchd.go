@@ -8,18 +8,40 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/mi4uu/whatsupd/internal/config"
 )
 
 // Label identifies the LaunchAgent.
-const Label = "dev.wamcp.daemon"
+const Label = "dev.whatsupd.daemon"
+
+// legacyLabel is the LaunchAgent installed before the rename.
+const legacyLabel = "dev." + config.LegacyName + ".daemon"
 
 // PlistPath returns ~/Library/LaunchAgents/<Label>.plist.
-func PlistPath() (string, error) {
+func PlistPath() (string, error) { return plistPath(Label) }
+
+func plistPath(label string) (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "Library", "LaunchAgents", Label+".plist"), nil
+	return filepath.Join(home, "Library", "LaunchAgents", label+".plist"), nil
+}
+
+func launchdRemoveLegacy() (string, error) {
+	path, err := plistPath(legacyLabel)
+	if err != nil {
+		return "", err
+	}
+	if _, err := os.Stat(path); err != nil {
+		return "", nil
+	}
+	_, _ = launchctl("bootout", domain()+"/"+legacyLabel)
+	if err := os.Remove(path); err != nil {
+		return "", err
+	}
+	return path, nil
 }
 
 func esc(s string) string {

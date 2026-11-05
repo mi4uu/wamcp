@@ -15,9 +15,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/mi4uu/wamcp/internal/archive"
-	"github.com/mi4uu/wamcp/internal/demo"
-	"github.com/mi4uu/wamcp/internal/outbox"
+	"github.com/mi4uu/whatsupd/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/demo"
+	"github.com/mi4uu/whatsupd/internal/outbox"
 )
 
 func seeded(t *testing.T) *archive.Store {

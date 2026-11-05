@@ -66,7 +66,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 // rare and coordinate with the daemon through SQLite locking.
 func OpenExisting(ctx context.Context, path string) (*Store, error) {
 	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("archive %s not found; start the daemon with `wamcp serve` first", path)
+		return nil, fmt.Errorf("archive %s not found; start the daemon with `whatsupd serve` first", path)
 	}
 	w, err := openWriter(path)
 	if err != nil {
@@ -79,7 +79,7 @@ func OpenExisting(ctx context.Context, path string) (*Store, error) {
 	}
 	if v != len(migrations) {
 		_ = w.Close()
-		return nil, fmt.Errorf("archive schema is v%d but this binary expects v%d; run the matching `wamcp serve` once", v, len(migrations))
+		return nil, fmt.Errorf("archive schema is v%d but this binary expects v%d; run the matching `whatsupd serve` once", v, len(migrations))
 	}
 	r, err := openReader(path)
 	if err != nil {

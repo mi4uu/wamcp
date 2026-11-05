@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/mi4uu/wamcp/internal/archive"
+	"github.com/mi4uu/whatsupd/internal/archive"
 )
 
 type formatter struct {

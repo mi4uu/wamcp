@@ -165,7 +165,7 @@ var (
 	ErrInvalidClient   = errors.New("invalid_client")
 	ErrInvalidGrant    = errors.New("invalid_grant")
 	ErrInvalidRequest  = errors.New("invalid_request")
-	ErrTooManyClients  = errors.New("too many registered clients; remove some with `wamcp oauth revoke`")
+	ErrTooManyClients  = errors.New("too many registered clients; remove some with `whatsupd oauth revoke`")
 )
 
 // ValidRedirect accepts https URLs and http on loopback (native apps).
@@ -207,7 +207,7 @@ func (s *Server) Register(name string, redirects []string) (*Client, error) {
 	if len(s.st.Clients) >= MaxClients && !s.evictUnapproved() {
 		return nil, ErrTooManyClients
 	}
-	c := &Client{ID: "wamcp-" + secret()[:22], Name: name, RedirectURIs: redirects, CreatedAt: s.now()}
+	c := &Client{ID: "whatsupd-" + secret()[:22], Name: name, RedirectURIs: redirects, CreatedAt: s.now()}
 	s.st.Clients[c.ID] = c
 	cp := *c
 	return &cp, s.save()

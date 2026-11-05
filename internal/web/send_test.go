@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/mi4uu/wamcp/internal/outbox"
+	"github.com/mi4uu/whatsupd/internal/outbox"
 )
 
 type fakeSender struct{ reqs []outbox.Request }
