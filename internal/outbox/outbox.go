@@ -36,6 +36,11 @@ type Config struct {
 	// RetryWindow is how long an identical text to the same chat counts as a
 	// retry when the caller gives no idempotency key.
 	RetryWindow time.Duration
+	// FilesDir is the only directory send_file may read a path from. Empty
+	// allows no paths; files then come as data or from archived media.
+	FilesDir string
+	// MaxFileBytes caps one file. Zero or less means DefaultMaxFileBytes.
+	MaxFileBytes int64
 }
 
 const (
@@ -43,20 +48,29 @@ const (
 	DefaultRetryWindow = 10 * time.Minute
 	KeyLookback        = 24 * time.Hour
 	MaxTextLen         = 4096
-	maxNotesPerHour    = 200
+	// DefaultMaxFileBytes matches WhatsApp's limit for images and voice notes
+	// and keeps a base64 request under the daemon's body limit.
+	DefaultMaxFileBytes = 16 << 20
+	maxNotesPerHour     = 200
 )
 
 // SendFunc delivers a text message with a caller-chosen message ID and
 // returns the ID WhatsApp accepted.
 type SendFunc func(ctx context.Context, chat, text, replyTo, messageID string) (string, error)
 
+// SendFileFunc delivers a file with a caller-chosen message ID. f has Data,
+// Name and MimeType set.
+type SendFileFunc func(ctx context.Context, chat string, f File, caption, replyTo, messageID string) (string, error)
+
 // Request is one send asked for by an agent. Chat must already be a JID.
+// For SendFile, Text is the caption and File names the content.
 type Request struct {
 	Chat           string
 	Text           string
 	ReplyTo        string
 	IdempotencyKey string
 	Client         string
+	File           *File `json:",omitempty"`
 }
 
 // Result describes a sent message.
@@ -72,17 +86,20 @@ type Result struct {
 // Outbox applies the policy. It is safe for concurrent use; sends are
 // serialized so a retry racing the original sees its outcome.
 type Outbox struct {
-	arc   *archive.Store
-	send  SendFunc
-	newID func() string
-	log   *slog.Logger
-	now   func() time.Time
+	arc      *archive.Store
+	send     SendFunc
+	sendFile SendFileFunc
+	newID    func() string
+	log      *slog.Logger
+	now      func() time.Time
 
 	allowAll  bool
 	allow     map[string]bool
 	allowSelf bool
 	perHour   int
 	window    time.Duration
+	filesDir  string
+	maxFile   int64
 
 	mu sync.Mutex
 }
@@ -96,6 +113,17 @@ func New(arc *archive.Store, cfg Config, send SendFunc, newID func() string, log
 	}
 	if o.window <= 0 {
 		o.window = DefaultRetryWindow
+	}
+	o.maxFile = cfg.MaxFileBytes
+	if o.maxFile <= 0 {
+		o.maxFile = DefaultMaxFileBytes
+	}
+	if cfg.FilesDir != "" {
+		dir, err := resolveDir(cfg.FilesDir)
+		if err != nil {
+			return nil, err
+		}
+		o.filesDir = dir
 	}
 	for _, raw := range cfg.Allow {
 		raw = strings.TrimSpace(raw)
@@ -114,6 +142,12 @@ func New(arc *archive.Store, cfg Config, send SendFunc, newID func() string, log
 	}
 	o.allowAll = len(o.allow) == 0 && !o.allowSelf
 	return o, nil
+}
+
+// WithFiles enables SendFile.
+func (o *Outbox) WithFiles(send SendFileFunc) *Outbox {
+	o.sendFile = send
+	return o
 }
 
 // AllowsAnyone reports whether no allowlist is configured.
@@ -135,7 +169,14 @@ func (o *Outbox) Policy() string {
 		}
 		who = strings.Join(sortedCopy(list), ", ")
 	}
-	return fmt.Sprintf("recipients: %s; at most %d messages per hour", who, o.perHour)
+	files := "files as data or from archived media"
+	if o.filesDir != "" {
+		files += ", or paths under " + o.filesDir
+	}
+	if o.sendFile == nil {
+		files = "text only"
+	}
+	return fmt.Sprintf("recipients: %s; at most %d messages per hour; %s", who, o.perHour, files)
 }
 
 // ParseRecipient turns a JID or phone number into a JID. Names are not
@@ -188,6 +229,20 @@ func dedupeKey(req Request) string {
 
 // SendText applies the policy and sends req.Text to req.Chat at most once.
 func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
+	req.File = nil
+	return o.deliver(ctx, req)
+}
+
+// SendFile applies the policy and sends req.File with req.Text as the
+// caption to req.Chat at most once.
+func (o *Outbox) SendFile(ctx context.Context, req Request) (Result, error) {
+	if req.File == nil {
+		req.File = &File{}
+	}
+	return o.deliver(ctx, req)
+}
+
+func (o *Outbox) deliver(ctx context.Context, req Request) (Result, error) {
 	req.Text = strings.TrimSpace(req.Text)
 	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
 	o.mu.Lock()
@@ -195,6 +250,10 @@ func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
 
 	now := o.now()
 	audit := archive.AgentSend{CreatedAt: now, ChatJID: req.Chat, Text: req.Text, ReplyTo: req.ReplyTo, Client: req.Client}
+	file := req.File
+	if file != nil {
+		audit.Text = strings.TrimSpace("[file] " + req.Text)
+	}
 	// note records a call that sent nothing. Past maxNotesPerHour such calls
 	// are only logged, so a looping agent cannot grow the archive without end.
 	note := func(status string, cause error) error {
@@ -219,10 +278,23 @@ func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
 	switch n := len([]rune(req.Text)); {
 	case req.Chat == "":
 		return refuse(errors.New("chat is required"))
-	case n == 0:
+	case n == 0 && file == nil:
 		return refuse(errors.New("text is required"))
 	case n > MaxTextLen:
 		return refuse(fmt.Errorf("text is %d characters; the limit is %d", n, MaxTextLen))
+	}
+	if file != nil {
+		if o.sendFile == nil {
+			return refuse(errors.New("sending files is not available"))
+		}
+		resolved, err := o.resolve(ctx, *file)
+		if err != nil {
+			return refuse(err)
+		}
+		file = &resolved
+		// The audit text and the de-duplication key name the content by hash.
+		req.Text = describe(resolved, req.Text)
+		audit.Text = req.Text
 	}
 	dir, err := o.arc.Directory(ctx)
 	if err != nil {
@@ -289,7 +361,13 @@ func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("audit log: %w; nothing was sent", err)
 	}
-	id, sendErr := o.send(ctx, req.Chat, req.Text, req.ReplyTo, audit.MessageID)
+	var id string
+	var sendErr error
+	if file != nil {
+		id, sendErr = o.sendFile(ctx, req.Chat, *file, captionOf(req.Text), req.ReplyTo, audit.MessageID)
+	} else {
+		id, sendErr = o.send(ctx, req.Chat, req.Text, req.ReplyTo, audit.MessageID)
+	}
 	done := o.now()
 	if sendErr != nil {
 		_ = o.arc.SetAgentSendStatus(context.WithoutCancel(ctx), pk, archive.SendFailed, audit.MessageID, sendErr.Error(), done)
@@ -299,7 +377,11 @@ func (o *Outbox) SendText(ctx context.Context, req Request) (Result, error) {
 	if err := o.arc.SetAgentSendStatus(context.WithoutCancel(ctx), pk, archive.SendSent, id, "", done); err != nil {
 		o.log.Error("mcp send: audit update failed", "pk", pk, "err", err)
 	}
-	o.log.Info("mcp send", "chat", req.Chat, "id", id, "chars", len([]rune(req.Text)), "client", req.Client)
+	if file != nil {
+		o.log.Info("mcp send file", "chat", req.Chat, "id", id, "bytes", len(file.Data), "type", file.MimeType, "client", req.Client)
+	} else {
+		o.log.Info("mcp send", "chat", req.Chat, "id", id, "chars", len([]rune(req.Text)), "client", req.Client)
+	}
 	return Result{Chat: req.Chat, MessageID: id, SentAt: done}, nil
 }
 
