@@ -48,3 +48,27 @@ jobs:
             test -f /usr/lib/systemd/user/whatsupd.service
             pacman -R --noconfirm whatsupd
             ! test -e /usr/bin/whatsupd'
+  upgrade:
+    # An install from before the rename to whatsupd, running as a systemd user
+    # service, must upgrade in place.
+    runs-on: ubuntu-latest
+    env:
+      OLD_COMMIT: f1f59672a3da1627cbeb33f7b0528bc70f329d31
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build the old wamcp and the new whatsupd
+        run: |
+          git fetch --depth=1 origin "$OLD_COMMIT"
+          mkdir -p /tmp/old
+          git archive FETCH_HEAD | tar -x -C /tmp/old
+          (cd /tmp/old && CGO_ENABLED=0 go build -o /tmp/wamcp ./cmd/wamcp)
+          CGO_ENABLED=0 go build -o /tmp/whatsupd ./cmd/whatsupd
+      - name: Start a systemd user session
+        run: |
+          sudo loginctl enable-linger "$USER"
+          for _ in $(seq 30); do test -S "/run/user/$(id -u)/bus" && break; sleep 1; done
+          XDG_RUNTIME_DIR="/run/user/$(id -u)" systemctl --user is-system-running --wait || true
+      - run: XDG_RUNTIME_DIR="/run/user/$(id -u)" scripts/upgrade-test.sh /tmp/wamcp /tmp/whatsupd

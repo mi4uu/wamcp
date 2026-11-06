@@ -79,9 +79,14 @@ func Plist(args []string, logFile string) string {
 
 func domain() string { return fmt.Sprintf("gui/%d", os.Getuid()) }
 
-func launchctl(args ...string) (string, error) {
-	out, err := exec.Command("launchctl", args...).CombinedOutput()
+// run executes a service manager command; tests replace it.
+var run = func(name string, args ...string) (string, error) {
+	out, err := exec.Command(name, args...).CombinedOutput()
 	return strings.TrimSpace(string(out)), err
+}
+
+func launchctl(args ...string) (string, error) {
+	return run("launchctl", args...)
 }
 
 func launchdInstall(args []string, logFile string) (string, error) {
