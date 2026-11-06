@@ -623,12 +623,12 @@ func (m *Manager) onMessage(ctx context.Context, evt *events.Message) bool {
 		return false
 	}
 	m.mu.Lock()
-	if m.catchingUp && res.Stored {
+	if m.catchingUp && res.New {
 		m.status.CatchUp.Received++
 	}
 	m.mu.Unlock()
 	m.bus.Publish(Event{Type: "message", Chat: res.ChatJID, ID: res.ID})
-	if res.Stored && res.HasMedia && m.cfg.AutoMedia && res.FileSize <= m.cfg.MediaMaxBytes {
+	if res.New && res.HasMedia && m.cfg.AutoMedia && res.FileSize <= m.cfg.MediaMaxBytes {
 		select {
 		case m.mediaQueue <- [2]string{res.ChatJID, res.ID}:
 		default: // full; the periodic sweep picks it up later

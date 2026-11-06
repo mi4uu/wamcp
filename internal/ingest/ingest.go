@@ -93,9 +93,12 @@ func (in *Ingestor) self() types.JID {
 // MessageResult describes the effect of a message event: the canonical chat
 // it touched and, for stored messages, follow-up data like media.
 type MessageResult struct {
-	ChatJID  string
-	ID       string // empty for reactions, edits and deletions
-	Stored   bool
+	ChatJID string
+	ID      string // empty for reactions, edits and deletions
+	Stored  bool
+	// New is false when the message was already archived, for example when
+	// WhatsApp delivers it again after a crash before the acknowledgement.
+	New      bool
 	HasMedia bool
 	FileSize int64
 }
@@ -114,8 +117,8 @@ func (in *Ingestor) Message(ctx context.Context, evt *events.Message, source str
 		if m == nil {
 			return nil
 		}
-		res.ID, res.Stored, res.HasMedia, res.FileSize = m.ID, true, m.HasMedia, m.FileSize
-		if (source == "live" || source == "sent") && m.Kind != "system" {
+		res.ID, res.Stored, res.New, res.HasMedia, res.FileSize = m.ID, true, b.inserted, m.HasMedia, m.FileSize
+		if (source == "live" || source == "sent") && m.Kind != "system" && b.inserted {
 			return b.tx.BumpUnread(m.ChatJID, chatKind(chat), m.FromMe)
 		}
 		return nil
@@ -402,6 +405,8 @@ type batch struct {
 	ctx     context.Context
 	tx      *archive.Tx
 	removed []string
+	// inserted is whether the last stored message was new to the archive.
+	inserted bool
 }
 
 // learn records that lid belongs to phone JID pn.
@@ -617,6 +622,11 @@ func (b *batch) message(evt *events.Message, source string) (*archive.Message, t
 }
 
 func (b *batch) store(m *archive.Message, kind string) error {
+	exists, err := b.tx.MessageExists(m.ChatJID, m.ID)
+	if err != nil {
+		return err
+	}
+	b.inserted = !exists
 	if err := b.tx.UpsertMessage(m); err != nil {
 		return fmt.Errorf("store message %s/%s: %w", m.ChatJID, m.ID, err)
 	}

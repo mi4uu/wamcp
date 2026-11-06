@@ -250,6 +250,13 @@ RETURNING pk, text, file_name, revoked_at IS NOT NULL, kind, COALESCE(edited_at,
 // UpsertMessage inserts a message or merges it into the stored copy. Content of
 // edited or deleted messages is never overwritten by older copies (for example
 // from a later history sync).
+// MessageExists reports whether chat already has a message with this id.
+func (t *Tx) MessageExists(chat, id string) (bool, error) {
+	var n int
+	err := t.tx.QueryRowContext(t.ctx, `SELECT COUNT(*) FROM messages WHERE chat_jid = ? AND id = ?`, chat, id).Scan(&n)
+	return n > 0, err
+}
+
 func (t *Tx) UpsertMessage(m *Message) error {
 	if m.ChatJID == "" || m.ID == "" {
 		return errors.New("message without chat or id")
