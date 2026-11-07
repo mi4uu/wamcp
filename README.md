@@ -84,7 +84,9 @@ Where others are ahead, today:
 - [CLI](#cli)
 - [Development](#development)
 - [Bugs, ideas and security reports](#bugs-ideas-and-security-reports)
+- [Support](#support)
 - [License](#license)
+- [Author](#author)
 
 ## Quick start
 
@@ -316,8 +318,22 @@ make build
 - **Idea:** [suggest a feature](https://github.com/mi4uu/whatsupd/issues/new?template=feature_request.yml).
 - **Security problem:** report it privately, see [SECURITY.md](SECURITY.md).
 
+## Support
+
+If whatsupd saves you time, you can support its development:
+
+[![Sponsor on GitHub](https://img.shields.io/badge/Sponsor-mi4uu-ec4899?logo=github-sponsors&logoColor=white)](https://github.com/sponsors/mi4uu) [![PayPal](https://img.shields.io/badge/PayPal-mi4uuuu-00457C?logo=paypal&logoColor=white)](https://www.paypal.com/paypalme/mi4uuuu)
+
 ## License
 
 [AGPL-3.0-or-later](LICENSE).
 
+Need it in a closed-source product, or can't meet the AGPL terms? Commercial licences are available on request: get in touch via [lipinski.work](https://lipinski.work).
+
+By sending a pull request you agree that your contribution may be offered under both the AGPL and a commercial licence.
+
 Built on [whatsmeow](https://github.com/tulir/whatsmeow) (MPL-2.0), the multi-device WhatsApp Web protocol library behind the mautrix bridge, and the official [MCP Go SDK](https://github.com/modelcontextprotocol/go-sdk). Not affiliated with WhatsApp or Meta.
+
+## Author
+
+Made by [Michał Lipiński](https://lipinski.work) ([GitHub](https://github.com/mi4uu)).
